@@ -1,0 +1,10 @@
+{
+  "name": "Grimoire 5e — Character Builder",
+  "short_name": "Grimoire 5e",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#161513",
+  "theme_color": "#1d1b18",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "grimoire-5e-character-manager",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Offline-first D&D 5e (2014) character builder and manager. Static site, no backend.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run content && tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "content": "node scripts/build-srd-content.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "screenshots": "node scripts/screenshots.mjs"
+  },
+  "dependencies": {
+    "@fontsource/alegreya": "^5.3.0",
+    "@fontsource/alegreya-sans": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "fake-indexeddb": "^6.2.8",
+    "jsdom": "^31.0.0",
+    "playwright-core": "^1.65.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.7",
+    "vitest": "^5.1.0"
+  }
+}
