@@ -1,3 +1,4 @@
+import { useDb, dbFor, RulesetProvider } from '@/ui/ruleset';
 // Multi-step character creation wizard. Edits a draft character directly (auto-saved),
 // so navigating back and forth never loses progress.
 import { useMemo, useState } from 'react';
@@ -14,11 +15,12 @@ import { EquipmentStep } from './EquipmentStep';
 import { SpellPicker, addClassSpell } from '../components/spells';
 import { PortraitInput } from '../components/PortraitInput';
 
+const stepLabel = (s: string, ch: Character) => (s === 'Race' && ch.ruleset === 'dnd5e-2024' ? 'Species' : s);
 const STEPS = ['Identity', 'Race', 'Class', 'Subclass', 'Background', 'Ability Scores', 'Proficiencies & Choices', 'Equipment', 'Spells', 'Details', 'Review'] as const;
 
 export function Wizard({ id, step }: { id: string; step?: string }) {
   const ch = useCharacter(id);
-  const db = useApp((s) => s.db);
+  const db = useApp((s) => s.dbs[ch?.ruleset ?? 'dnd5e-2014']);
   const update = useApp((s) => s.update);
   if (!ch) return <Empty>Character not found. <a href="#/">Back to list</a></Empty>;
   const d = derive(ch, db);
@@ -29,6 +31,7 @@ export function Wizard({ id, step }: { id: string; step?: string }) {
   const Step = [IdentityStep, RaceStep, ClassStep, SubclassStep, BackgroundStep, AbilityStep, ChoicesStep, EquipmentStep, SpellsStep, DetailsStep, ReviewStep][idx];
 
   return (
+    <RulesetProvider value={ch.ruleset}>
     <div className="stack">
       <div className="page-head">
         <h1>New character{ch.identity.name ? `: ${ch.identity.name}` : ''}</h1>
@@ -38,22 +41,23 @@ export function Wizard({ id, step }: { id: string; step?: string }) {
         <nav className="wizard-steps" aria-label="Creation steps">
           {STEPS.map((s, i) => (
             <button key={s} className={`${i === idx ? 'active' : ''} ${status[i] === 'done' ? 'done' : status[i] === 'todo' ? 'todo' : ''}`} onClick={() => goStep(i)}>
-              <span className="n">{status[i] === 'done' ? '✓' : i + 1}</span><span className="label">{s}</span>
+              <span className="n">{status[i] === 'done' ? '✓' : i + 1}</span><span className="label">{stepLabel(s, ch)}</span>
             </button>
           ))}
         </nav>
         <div className="stack">
           <div className="panel">
-            <h2 style={{ marginBottom: 12 }}>{STEPS[idx]}</h2>
+            <h2 style={{ marginBottom: 12 }}>{stepLabel(STEPS[idx], ch)}</h2>
             <Step ch={ch} d={d} set={set} goStep={goStep} />
           </div>
           <div className="wizard-nav">
             <button onClick={() => goStep(idx - 1)} disabled={idx === 0}>← Back</button>
-            {idx < STEPS.length - 1 && <button className="primary" onClick={() => goStep(idx + 1)}>Next: {STEPS[idx + 1]} →</button>}
+            {idx < STEPS.length - 1 && <button className="primary" onClick={() => goStep(idx + 1)}>Next: {stepLabel(STEPS[idx + 1], ch)} →</button>}
           </div>
         </div>
       </div>
     </div>
+    </RulesetProvider>
   );
 }
 
@@ -106,8 +110,13 @@ function IdentityStep({ ch, set }: StepProps) {
         <Field label="Alignment"><select value={ch.identity.alignment} onChange={(e) => set((c) => { c.identity.alignment = e.target.value; })}><option value="">—</option>{ALIGNMENTS.map((a) => <option key={a}>{a}</option>)}</select></Field>
       </div>
       <div className="field-row">
-        <Field label="Ruleset" hint="2024 rules are not yet supported; characters are clearly tagged with their ruleset.">
-          <select value={ch.ruleset} onChange={(e) => set((c) => { c.ruleset = e.target.value as Character['ruleset']; })}>
+        <Field label="Ruleset" hint="2014 and 2024 content are kept separate. 2024: ability increases and an Origin feat come from the background; Weapon Mastery; new exhaustion.">
+          <select value={ch.ruleset} onChange={(e) => {
+            const next = e.target.value as Character['ruleset'];
+            const hasData = !!(ch.race.raceId || ch.background.backgroundId || ch.classes.length || ch.spells.entries.length);
+            if (hasData && !window.confirm('Switching rulesets clears race/species, class, background, choices and spells chosen so far (2014 and 2024 content are not mixed). Continue?')) return;
+            set((c) => { c.ruleset = next; c.race = { raceId: '' }; c.background = { backgroundId: '' }; c.classes = []; c.spells.entries = []; c.choices = Object.fromEntries(Object.entries(c.choices).filter(([k]) => k.startsWith('wizard:start-level'))); });
+          }}>
             {Object.entries(RULESETS).map(([k, v]) => <option key={k} value={k} disabled={!v.supported}>{v.name}</option>)}
           </select>
         </Field>
@@ -127,7 +136,7 @@ function IdentityStep({ ch, set }: StepProps) {
 }
 
 function RaceStep({ ch, d, set }: StepProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const races = [...db.races.values()].sort((a, b) => a.name.localeCompare(b.name));
   const race = db.races.get(ch.race.raceId);
   return (
@@ -136,14 +145,14 @@ function RaceStep({ ch, d, set }: StepProps) {
         {races.map((r) => (
           <button key={r.id} className={`option ${ch.race.raceId === r.id ? 'selected' : ''}`} onClick={() => set((c) => { if (c.race.raceId !== r.id) { c.race = { raceId: r.id, subraceId: r.subraces?.length === 1 ? r.subraces[0].id : undefined }; } })}>
             <span className="title">{r.name}</span>
-            <span className="desc">{Object.entries(r.abilityBonuses).map(([a, v]) => `${a.toUpperCase()} ${signed(v!)}`).join(', ') || 'Flexible'} · {r.source.book}</span>
+            <span className="desc">{ch.ruleset === 'dnd5e-2024' ? `${titleCase(r.size)} · speed ${r.speed.walk}` : Object.entries(r.abilityBonuses).map(([a, v]) => `${a.toUpperCase()} ${signed(v!)}`).join(', ') || 'Flexible'} · {r.source.book}</span>
           </button>
         ))}
       </div>
       <div className="stack">
         {!race ? <Empty>Select a race to see its traits.</Empty> : <>
           <div><h3>{race.name}</h3><p className="ink2">{race.description}</p>
-            <div className="row small"><span className="chip">Size: {titleCase(race.size)}</span><span className="chip">Speed {race.speed.walk} ft{Object.entries(race.speed).filter(([k]) => k !== 'walk').map(([k, v]) => `, ${k} ${v}`).join('')}</span>{race.source.kind === 'summary' && <span className="chip">Summary — see {race.source.book}</span>}</div>
+            <div className="row small">{race.sizeOptions?.length ? <select value={ch.identity.size ?? race.size} onChange={(e) => set((c) => { c.identity.size = e.target.value as Character['identity']['size']; })} style={{ width: 'auto' }} aria-label="Size">{race.sizeOptions.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}</select> : <span className="chip">Size: {titleCase(race.size)}</span>}{ch.ruleset === 'dnd5e-2024' && <span className="chip">Ability increases come from your background</span>}<span className="chip">Speed {race.speed.walk} ft{Object.entries(race.speed).filter(([k]) => k !== 'walk').map(([k, v]) => `, ${k} ${v}`).join('')}</span>{race.source.kind === 'summary' && <span className="chip">Summary — see {race.source.book}</span>}</div>
           </div>
           {race.subraces?.length ? (
             <div className="stack">
@@ -170,7 +179,7 @@ function RaceStep({ ch, d, set }: StepProps) {
 }
 
 function ClassStep({ ch, d, set }: StepProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const cur = ch.classes[0];
   const def = cur ? db.classes.get(cur.classId) : undefined;
   const startLevel = cur?.level ?? Number(ch.choices['wizard:start-level']?.[0] ?? 1);
@@ -209,7 +218,7 @@ function ClassStep({ ch, d, set }: StepProps) {
 }
 
 function SubclassStep({ ch, set }: StepProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const cur = ch.classes[0];
   const def = cur && db.classes.get(cur.classId);
   const [preview, setPreview] = useState<string | undefined>(cur?.subclassId);
@@ -243,7 +252,7 @@ function SubclassStep({ ch, set }: StepProps) {
 }
 
 function BackgroundStep({ ch, d, set }: StepProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const bgs = [...db.backgrounds.values()].sort((a, b) => a.name.localeCompare(b.name));
   const bg = db.backgrounds.get(ch.background.backgroundId);
   return (
@@ -257,9 +266,12 @@ function BackgroundStep({ ch, d, set }: StepProps) {
           <dl className="kv">
             <dt>Skills</dt><dd>{(bg.grants.skills ?? []).map(titleCase).join(', ') || '—'}</dd>
             <dt>Tools</dt><dd>{(bg.grants.tools ?? []).join(', ') || '—'}</dd>
-            <dt>Equipment</dt><dd>{bg.equipment.map((e) => e.name ?? db.items.get(e.itemId)?.name ?? e.itemId).join(', ')}, {bg.gold} gp</dd>
+            <dt>Equipment</dt><dd>{bg.equipment.map((e) => e.name ?? db.items.get(e.itemId)?.name ?? e.itemId).join(', ') || '—'}{bg.gold ? `, ${bg.gold} gp` : ''}{bg.goldAlternative ? ` (or ${bg.goldAlternative} gp instead)` : ''}</dd>
+            {bg.abilityOptions && <><dt>Ability scores</dt><dd>{bg.abilityOptions.map((a) => a.toUpperCase()).join(', ')}: +2/+1 or +1/+1/+1</dd></>}
+            {bg.originFeat && <><dt>Origin feat</dt><dd>{bg.originFeat.note ?? db.feats.get(bg.originFeat.id)?.name ?? bg.originFeat.id}</dd></>}
           </dl>
-          <div className="feature"><div className="feature-head"><h4>Feature: {bg.feature.name}</h4></div><div className="feature-desc">{bg.feature.description}</div></div>
+          {bg.feature.name && <div className="feature"><div className="feature-head"><h4>Feature: {bg.feature.name}</h4></div><div className="feature-desc">{bg.feature.description}</div></div>}
+          {bg.originFeat && db.feats.get(bg.originFeat.id) && <div className="feature"><div className="feature-head"><h4>Origin feat: {db.feats.get(bg.originFeat.id)!.name}</h4><span className="small muted">its choices are on the Proficiencies & Choices step</span></div><div className="feature-desc clamp">{db.feats.get(bg.originFeat.id)!.description}</div></div>}
           {choicesFor(d, ['background']).map((cv) => <ChoiceEditor key={cv.key} cv={cv} ch={ch} d={d} onChange={(v) => set((c) => { c.choices[cv.key] = v; })} />)}
         </div>
       )}
@@ -283,7 +295,7 @@ function AbilityStep({ ch, d, set }: StepProps) {
             </div>
           ))}
         </div>
-        {choicesFor(d, ['race', 'subrace']).filter((c) => c.def.kind === 'ability').map((cv) => <ChoiceEditor key={cv.key} cv={cv} ch={ch} d={d} onChange={(v) => set((c) => { c.choices[cv.key] = v; })} />)}
+        {choicesFor(d, ['race', 'subrace', 'background']).filter((c) => c.def.kind === 'ability' || c.def.kind === 'ability-split').map((cv) => <ChoiceEditor key={cv.key} cv={cv} ch={ch} d={d} onChange={(v) => set((c) => { c.choices[cv.key] = v; })} />)}
       </div>
       {ch.abilities.method === 'manual' && <label className="check"><input type="checkbox" checked={ch.choices['wizard:abilities-done']?.[0] === '1'} onChange={(e) => set((c) => { c.choices['wizard:abilities-done'] = [e.target.checked ? '1' : '0']; })} />These manually entered scores are final</label>}
     </div>
@@ -322,7 +334,7 @@ function ChoicesStep({ ch, d, set }: StepProps) {
 }
 
 function SpellsStep({ ch, d, set }: StepProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [active, setActive] = useState(0);
   if (!d.casters.length) return <Empty>Your character has no class spellcasting at this level. Racial or feat spells are added automatically.</Empty>;
   const cv = d.casters[Math.min(active, d.casters.length - 1)];
@@ -348,7 +360,7 @@ function SpellsStep({ ch, d, set }: StepProps) {
 function DetailsStep({ ch, set }: StepProps) {
   const t = (k: keyof Character['personality'], label: string, rows = 3) => <Field label={label}><textarea rows={rows} value={ch.personality[k] ?? ''} onChange={(e) => set((c) => { (c.personality as Record<string, string>)[k] = e.target.value; })} /></Field>;
   const i = (k: keyof Character['identity'], label: string) => <Field label={label}><input value={String(ch.identity[k] ?? '')} onChange={(e) => set((c) => { (c.identity as Record<string, unknown>)[k] = e.target.value; })} /></Field>;
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const bg = db.backgrounds.get(ch.background.backgroundId);
   return (
     <div className="stack lg">
@@ -387,7 +399,7 @@ function ReviewStep({ ch, d, set, goStep }: StepProps) {
       <dl className="kv">
         <dt>Name</dt><dd>{ch.identity.name || <span className="bad">missing</span>}</dd>
         <dt>Class</dt><dd>{d.classLine}</dd>
-        <dt>Background</dt><dd>{useApp.getState().db.backgrounds.get(ch.background.backgroundId)?.name ?? '—'}</dd>
+        <dt>Background</dt><dd>{dbFor(ch.ruleset).backgrounds.get(ch.background.backgroundId)?.name ?? '—'}</dd>
         <dt>Abilities</dt><dd>{ABILITIES.map((a) => `${a.toUpperCase()} ${d.abilities[a].score}`).join(' · ')}</dd>
         <dt>Features</dt><dd>{d.features.length} active features, {d.resources.length} tracked resources</dd>
         <dt>Inventory</dt><dd>{ch.inventory.length} items</dd>

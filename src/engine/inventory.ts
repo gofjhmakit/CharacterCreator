@@ -102,3 +102,58 @@ export function setAttuned(ch: Character, id: string, attuned: boolean, limit: n
   it.attuned = attuned;
   return { character: c };
 }
+
+// ---------------------------------------------------------------------------
+// Equipment slots
+// ---------------------------------------------------------------------------
+
+/** Hands an item occupies when equipped (0 = not hand-held). */
+export function handsFor(it: InventoryItem): number {
+  if (it.item.armor?.category === 'shield') return 1;
+  if (it.item.weapon) return it.item.weapon.properties.includes('two-handed') ? 2 : 1;
+  return 0;
+}
+
+export type EquipSlot = 'body' | 'hands' | 'ring' | null;
+export function slotFor(it: InventoryItem): EquipSlot {
+  if (it.item.armor && it.item.armor.category !== 'shield') return 'body';
+  if (handsFor(it) > 0) return 'hands';
+  if (it.item.category === 'ring') return 'ring';
+  return null;
+}
+
+export const RING_SLOTS = 2;
+export const HANDS = 2;
+
+/**
+ * Equip or unequip an item, enforcing slots: one suit of body armor, two hands for weapons and
+ * shields (Two-Handed weapons need both), and two rings. Conflicting items that were equipped
+ * longest ago are unequipped. Returns the names of items that were unequipped.
+ */
+export function setEquipped(ch: Character, id: string, on: boolean): { character: Character; unequipped: string[] } {
+  const c = structuredClone(ch);
+  const it = c.inventory.find((x) => x.id === id);
+  if (!it) return { character: c, unequipped: [] };
+  if (!on) { it.equipped = false; it.offHand = false; return { character: c, unequipped: [] }; }
+  const unequipped: string[] = [];
+  const drop = (x: InventoryItem) => { x.equipped = false; x.offHand = false; unequipped.push(x.item.name); };
+  const slot = slotFor(it);
+  const others = c.inventory.filter((x) => x.id !== id && x.equipped);
+  if (slot === 'body') others.filter((x) => slotFor(x) === 'body').forEach(drop);
+  if (slot === 'ring') {
+    const rings = others.filter((x) => slotFor(x) === 'ring');
+    while (rings.length >= RING_SLOTS) drop(rings.shift()!);
+  }
+  if (slot === 'hands') {
+    const need = handsFor(it);
+    // A second shield is never useful: replace the current one.
+    if (it.item.armor?.category === 'shield') others.filter((x) => x.item.armor?.category === 'shield').forEach(drop);
+    const held = others.filter((x) => x.equipped && slotFor(x) === 'hands');
+    let used = held.reduce((s, x) => s + handsFor(x), 0);
+    // Drop weapons first (keep the shield if possible), oldest first.
+    const order = [...held.filter((x) => !x.item.armor), ...held.filter((x) => x.item.armor)];
+    while (used + need > HANDS && order.length) { const x = order.shift()!; used -= handsFor(x); drop(x); }
+  }
+  it.equipped = true;
+  return { character: c, unequipped };
+}

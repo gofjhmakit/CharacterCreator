@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import type { SpellView, CasterView } from '@/engine/derive';
@@ -6,14 +7,33 @@ import { ABILITY_NAMES, signed } from '@/types/core';
 import { useApp } from '@/state/store';
 import { useRoller } from '../../components/roll';
 import { Modal, BreakdownView, Empty, Pips, titleCase, Field } from '../../components/common';
-import { SpellPicker, SpellDetailModal, SpellMeta, addClassSpell, lvlLabel } from '../../components/spells';
+import { SpellPicker, SpellDetailModal, SpellMeta, addClassSpell, lvlLabel, availableSpells } from '../../components/spells';
 import { SORCERY_POINT_SLOT_COST } from '@/engine/spellSlots';
 import { arcaneRecovery } from '@/engine/actions';
 import { uid } from '@/engine/factory';
 import { fuzzySearch } from '@/search/fuzzy';
 
+const REVIVE_SPELLS = new Set(['revivify', 'raise-dead', 'resurrection', 'true-resurrection', 'reincarnate']);
+
+/** Reminder for an on-heal / on-revive / other triggered effect, with a quick way to apply spell effects to yourself. */
+export function TriggerReminder({ r, set }: { r: TabProps['d']['triggers'][number]; set: TabProps['set'] }) {
+  const db = useDb();
+  const toast = useApp((st) => st.toast);
+  const spellOutcomes = (r.outcomes ?? []).filter((o) => o.kind === 'spell-effect' && o.spellId);
+  return (
+    <div className="notice small" style={{ borderLeftColor: 'var(--blue)' }}>
+      <b>{r.label}</b> <span className="muted">({r.source?.label})</span>
+      <div>{r.text}</div>
+      {spellOutcomes.map((o, i) => {
+        const spell = db.spells.get(o.spellId!);
+        return <button key={i} className="small" style={{ marginTop: 4 }} title="Use this if the creature is you" onClick={() => { set((c) => { c.effects.push({ id: uid('fx'), name: spell?.name ?? o.spellId!, effect: { id: `fx-${o.spellId}`, name: spell?.name, manual: true, description: `${spell?.name}: ${(spell?.description ?? '').slice(0, 240)}` }, duration: o.duration ?? spell?.duration, createdAt: new Date().toISOString() }); }); toast({ kind: 'success', text: `${spell?.name ?? o.spellId} applied to you.` }); }}>Apply {spell?.name ?? o.spellId} to me</button>;
+      })}
+    </div>
+  );
+}
+
 export function SpellsTab({ ch, d, set, replace }: TabProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const toast = useApp((s) => s.toast);
   const roller = useRoller();
   const [filter, setFilter] = useState<'all' | 'prepared' | 'favorites' | 'ritual' | 'concentration'>('all');
@@ -118,6 +138,7 @@ export function SpellsTab({ ch, d, set, replace }: TabProps) {
                         <td>
                           <button className="ghost small" style={{ padding: 0, minHeight: 0, fontWeight: 700 }} onClick={() => s.spell && setDetail(s.spell)}>{s.spell?.name ?? s.spellId}</button>
                           {!s.spell && <span className="badge warn">missing</span>}
+                          {s.entry?.source === 'class' && cv && s.spell && availableSpells(cv, d, [s.spell], ch).length === 0 && <span className="badge warn" title="Added outside the class list (homebrew / DM permission)">off-list</span>}
                           {s.spell?.concentration && <span className="badge" title="Concentration">C</span>} {s.spell?.ritual && <span className="badge" title="Ritual">R</span>}
                           <div className="small muted">{s.spell ? `${s.spell.castingTime} · ${s.spell.range}${s.spell.save ? ` · ${s.spell.save.toUpperCase()} save` : ''}${s.spell.attack ? ' · attack' : ''}` : ''}</div>
                         </td>
@@ -187,13 +208,15 @@ function ArcaneRecovery({ ch, wizLvl, available, onApply }: { ch: TabProps['ch']
 }
 
 function AddOtherSpell({ onClose, onAdd }: { onClose: () => void; onAdd: (spellId: string, label: string, uses: number | undefined, ability: 'int' | 'wis' | 'cha') => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [q, setQ] = useState('');
   const [label, setLabel] = useState('Feat / item / DM');
   const [uses, setUses] = useState('');
   const [ability, setAbility] = useState<'int' | 'wis' | 'cha'>('cha');
-  const all = useMemo(() => [...db.spells.values()], [db]);
-  const list = q ? fuzzySearch(q, all, (s) => ({ id: s.id, name: s.name, keywords: [s.school, ...s.classes] })).map((h) => h.item) : all.slice(0, 50);
+  const [cls, setCls] = useState('any');
+  const all = useMemo(() => [...db.spells.values()].filter((x) => cls === 'any' || x.classes.includes(cls)), [db, cls]);
+  const classes = useMemo(() => [...new Set([...db.spells.values()].flatMap((x) => x.classes))].sort(), [db]);
+  const list = q ? fuzzySearch(q, all, (s) => ({ id: s.id, name: s.name, keywords: [s.school, ...s.classes] })).map((h) => h.item) : [...all].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)).slice(0, 80);
   return (
     <Modal title="Add a spell from another source" onClose={onClose} size="wide">
       <div className="stack">
@@ -202,9 +225,9 @@ function AddOtherSpell({ onClose, onAdd }: { onClose: () => void; onAdd: (spellI
           <Field label="Uses per long rest" hint="Leave empty for at-will / uses your slots"><input type="number" value={uses} onChange={(e) => setUses(e.target.value)} /></Field>
           <Field label="Spellcasting ability"><select value={ability} onChange={(e) => setAbility(e.target.value as 'cha')}><option value="int">Intelligence</option><option value="wis">Wisdom</option><option value="cha">Charisma</option></select></Field>
         </div>
-        <input placeholder="Search all spells…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="row"><input className="grow" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} /><select value={cls} onChange={(e) => setCls(e.target.value)} style={{ width: 'auto' }} aria-label="Class list"><option value="any">All classes</option>{classes.map((c) => <option key={c} value={c}>{titleCase(c)}</option>)}</select></div>
         <div className="list panel flush" style={{ maxHeight: 360, overflow: 'auto' }}>
-          {list.slice(0, 80).map((s) => <div key={s.id} className="list-row clickable" onClick={() => { onAdd(s.id, label, uses ? Number(uses) : undefined, ability); onClose(); }}><span className="grow">{s.name}</span><span className="small muted">{lvlLabel(s.level)} · {titleCase(s.school)}</span></div>)}
+          {list.slice(0, 80).map((s) => <div key={s.id} className="list-row clickable" onClick={() => { onAdd(s.id, label, uses ? Number(uses) : undefined, ability); onClose(); }}><span className="grow">{s.name}</span><span className="small muted">{lvlLabel(s.level)} · {titleCase(s.school)} · {s.classes.map(titleCase).join(', ')}</span></div>)}
         </div>
       </div>
     </Modal>
@@ -220,7 +243,10 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
     ...d.slots.filter((x) => x.level >= sp.level).map((x) => ({ key: `s${x.level}`, label: `Level ${x.level} slot (${x.max - x.used} left)`, level: x.level, ok: x.max - x.used > 0, pact: false })),
     ...(d.pact && d.pact.level >= sp.level ? [{ key: 'pact', label: `Pact slot, level ${d.pact.level} (${d.pact.slots - d.pact.used} left)`, level: d.pact.level, ok: d.pact.slots - d.pact.used > 0, pact: true }] : []),
   ];
-  const [choice, setChoice] = useState(() => (isWarlock && slotOptions.find((o) => o.pact && o.ok)?.key) || slotOptions.find((o) => o.ok)?.key || (s.uses ? 'use' : 'free'));
+  const [choice, setChoice] = useState(() => (s.charges ? 'charges' : s.uses && s.granted ? 'use' : '') || (isWarlock && slotOptions.find((o) => o.pact && o.ok)?.key) || slotOptions.find((o) => o.ok)?.key || (s.uses ? 'use' : 'free'));
+  const isRevive = REVIVE_SPELLS.has(sp.id);
+  const isHeal = !!sp.heal || (sp.tags ?? []).includes('healing') || /regains? (?:a number of )?hit points/i.test(sp.description);
+  const reminders = d.triggers.filter((t) => (isRevive && t.trigger === 'on-revive') || ((isHeal || isRevive) && t.trigger === 'on-heal'));
   const castLevel = slotOptions.find((o) => o.key === choice)?.level ?? sp.level;
   const dmg = sp.damage?.bySlot?.[String(castLevel)] ?? (sp.damage?.byCharLevel ? Object.entries(sp.damage.byCharLevel).filter(([k]) => Number(k) <= d.totalLevel).pop()?.[1] : undefined);
   const heal = sp.heal?.[String(castLevel)];
@@ -230,6 +256,10 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
       const o = slotOptions.find((x) => x.key === choice);
       if (o?.pact) c.spells.pactSlotsUsed += 1;
       else if (o) c.spells.slotsUsed[o.level] = (c.spells.slotsUsed[o.level] ?? 0) + 1;
+      else if (choice === 'charges' && s.charges) {
+        const it = c.inventory.find((x) => x.id === s.charges!.itemInstanceId);
+        if (it) it.charges = Math.max(0, (it.charges ?? s.charges.max) - s.charges.cost);
+      }
       else if (choice === 'use' && s.uses) {
         if (s.entry?.uses) { const e = c.spells.entries.find((x) => x.id === s.entry!.id); if (e?.uses) e.uses.used += 1; }
         else if (s.uses.resourceId) c.resources[s.uses.resourceId] = { ...(c.resources[s.uses.resourceId] ?? {}), used: (c.resources[s.uses.resourceId]?.used ?? 0) + 1 };
@@ -247,7 +277,8 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
           <Field label="Spend">
             <select value={choice} onChange={(e) => setChoice(e.target.value)}>
               {slotOptions.map((o) => <option key={o.key} value={o.key} disabled={!o.ok}>{o.label}</option>)}
-              {s.uses && <option value="use">Innate use ({s.uses.max - s.uses.used}/{s.uses.max})</option>}
+              {s.uses && <option value="use" disabled={s.uses.max - s.uses.used <= 0}>{s.granted ? `${s.sourceLabel}: free use` : 'Innate use'} ({s.uses.max - s.uses.used}/{s.uses.max})</option>}
+              {s.charges && <option value="charges" disabled={s.charges.remaining < s.charges.cost}>{s.sourceLabel}: {s.charges.cost} charge{s.charges.cost > 1 ? 's' : ''} ({s.charges.remaining}/{s.charges.max} left)</option>}
               <option value="free">No slot (ritual, item, free cast)</option>
             </select>
           </Field>
@@ -260,6 +291,7 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
           {healExpr && <button onClick={() => roller.expr(`${sp.name} healing`, healExpr, 'healing')}>Healing {healExpr}</button>}
         </div>
         {sp.concentration && ch.combat.concentration && ch.combat.concentration !== sp.name && <div className="notice small">Casting this ends your concentration on {ch.combat.concentration}.</div>}
+        {reminders.map((r, i) => <TriggerReminder key={i} r={r} set={set} />)}
         <details><summary className="small">Description</summary><div className="pre small" style={{ marginTop: 6 }}>{sp.description}</div>{sp.higherLevels && <p className="small"><b>At higher levels.</b> {sp.higherLevels}</p>}</details>
       </div>
     </Modal>

@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 // Dense one-page character sheet: covers every field of the official 2014 sheet (pages 1–3) and more. Print-friendly.
 import type { TabProps } from '../CharacterView';
 import { ABILITIES, ABILITY_NAMES, SKILLS, SKILL_IDS, signed } from '@/types/core';
@@ -7,7 +8,7 @@ import { titleCase } from '../../components/common';
 import { lvlLabel } from '../../components/spells';
 
 export function SheetTab({ ch, d }: TabProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const roller = useRoller();
   const race = db.races.get(ch.race.raceId);
   const sub = race?.subraces?.find((s) => s.id === ch.race.subraceId);

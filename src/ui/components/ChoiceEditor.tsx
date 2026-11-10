@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 // Generic editor for any content ChoiceDef (skills, languages, tools, ASI/feat, spells, options...).
 import { useMemo, useState } from 'react';
 import type { Character } from '@/types/character';
@@ -13,6 +14,7 @@ interface Props { cv: ChoiceView; ch: Character; d: Derived; onChange: (values: 
 export function choiceComplete(cv: ChoiceView): boolean {
   if (cv.def.optional) return true;
   if (cv.def.kind === 'asi') return cv.selected.length >= 1 && (cv.selected[0].startsWith('feat:') || cv.selected.length >= 2);
+  if (cv.def.kind === 'ability-split') return cv.selected.length >= 3;
   return cv.selected.length >= cv.count;
 }
 
@@ -35,7 +37,7 @@ function toggle(list: string[], v: string, max: number): string[] {
 
 function ChoiceBody({ cv, ch, d, onChange }: Props) {
   const { def, count, selected } = cv;
-  const db = useApp((s) => s.db);
+  const db = useDb();
   switch (def.kind) {
     case 'skill':
     case 'expertise': {
@@ -78,7 +80,8 @@ function ChoiceBody({ cv, ch, d, onChange }: Props) {
       return <div className="row">{from.map((a) => <button key={a} className={`small ${selected.includes(a) ? 'on' : ''}`} onClick={() => onChange(toggle(selected, a, count))}>{ABILITY_NAMES[a]} +{def.amount ?? 1}</button>)}</div>;
     }
     case 'asi': return <AsiPicker cv={cv} ch={ch} d={d} onChange={onChange} />;
-    case 'feat': return <FeatPicker selected={selected} max={count} ch={ch} d={d} onChange={onChange} />;
+    case 'feat': return <FeatPicker selected={selected} max={count} ch={ch} d={d} onChange={onChange} categories={def.featCategories} />;
+    case 'ability-split': return <AbilitySplit cv={cv} d={d} onChange={onChange} />;
     case 'spell': return <SpellChoice cv={cv} d={d} onChange={onChange} />;
     case 'options':
     default: {
@@ -142,16 +145,41 @@ function AsiPicker({ cv, ch, d, onChange }: { cv: ChoiceView; ch: Character; d: 
       </div>
       {m === 'plus2' && <div className="row">{ABILITIES.map((a) => <button key={a} className={`small ${sel[0] === a && sel[1] === a ? 'on' : ''}`} disabled={scoreOf(a) >= d.abilities[a].max && sel[0] !== a} onClick={() => onChange([a, a])}>{a.toUpperCase()} <span className="muted">{scoreOf(a)}</span></button>)}</div>}
       {m === 'plus1' && <div className="row">{ABILITIES.map((a) => <button key={a} className={`small ${sel.includes(a) ? 'on' : ''}`} disabled={scoreOf(a) >= d.abilities[a].max && !sel.includes(a)} onClick={() => onChange(sel.includes(a) ? sel.filter((x) => x !== a) : sel.length >= 2 ? [sel[1], a] : [...sel, a])}>{a.toUpperCase()} <span className="muted">{scoreOf(a)}</span></button>)}</div>}
-      {m === 'feat' && <FeatPicker selected={sel.filter((x) => x.startsWith('feat:')).map((x) => x.slice(5))} max={1} ch={ch} d={d} onChange={(v) => onChange(v.map((x) => `feat:${x}`))} />}
+      {m === 'feat' && <FeatPicker categories={cv.def.featCategories} selected={sel.filter((x) => x.startsWith('feat:')).map((x) => x.slice(5))} max={1} ch={ch} d={d} onChange={(v) => onChange(v.map((x) => `feat:${x}`))} />}
       <span className="small muted">Scores can’t exceed 20 through Ability Score Improvements.</span>
     </div>
   );
 }
 
-function FeatPicker({ selected, max, ch, d, onChange }: { selected: string[]; max: number; ch: Character; d: Derived; onChange: (v: string[]) => void }) {
-  const db = useApp((s) => s.db);
+function AbilitySplit({ cv, d, onChange }: { cv: ChoiceView; d: Derived; onChange: (v: string[]) => void }) {
+  const from = (cv.def.from ?? ABILITIES) as Ability[];
+  const sel = cv.selected;
+  const isPlus2 = sel.length === 3 && new Set(sel).size === 2;
+  const [mode, setMode] = useState<'21' | '111'>(sel.length === 3 && new Set(sel).size === 3 ? '111' : '21');
+  const two = isPlus2 ? sel.find((a) => sel.filter((x) => x === a).length === 2) : sel[0];
+  const one = isPlus2 ? sel.find((a) => a !== two) : sel[2];
+  const show = (a: Ability) => `${a.toUpperCase()} ${d.abilities[a].score}`;
+  return (
+    <div className="stack">
+      <div className="btn-group">
+        <button className={`small ${mode === '21' ? 'on' : ''}`} onClick={() => { setMode('21'); onChange([]); }}>+2 and +1</button>
+        <button className={`small ${mode === '111' ? 'on' : ''}`} onClick={() => { setMode('111'); onChange([...from]); }}>+1 to all three</button>
+      </div>
+      {mode === '21' ? (
+        <div className="row">
+          <label className="row tight small">+2 to <select value={two ?? ''} onChange={(e) => { const a = e.target.value; const o = one && one !== a ? one : from.find((x) => x !== a)!; onChange(a ? [a, a, o] : []); }} style={{ width: 'auto' }}><option value="">—</option>{from.map((a) => <option key={a} value={a}>{show(a)}</option>)}</select></label>
+          <label className="row tight small">+1 to <select value={one ?? ''} disabled={!two} onChange={(e) => two && onChange([two, two, e.target.value])} style={{ width: 'auto' }}>{from.filter((a) => a !== two).map((a) => <option key={a} value={a}>{show(a)}</option>)}</select></label>
+        </div>
+      ) : <div className="small">{from.map((a) => `${a.toUpperCase()} +1`).join(', ')}</div>}
+      <span className="small muted">2024 rules: no score can go above 20 this way.</span>
+    </div>
+  );
+}
+
+function FeatPicker({ selected, max, ch, d, onChange, categories }: { selected: string[]; max: number; ch: Character; d: Derived; onChange: (v: string[]) => void; categories?: string[] }) {
+  const db = useDb();
   const [q, setQ] = useState('');
-  const feats = useMemo(() => [...db.feats.values()].sort((a, b) => a.name.localeCompare(b.name)), [db]);
+  const feats = useMemo(() => [...db.feats.values()].filter((f) => !categories?.length || (f.category && categories.includes(f.category)) || (!f.category && db.isCustom('feat', f.id))).sort((a, b) => a.name.localeCompare(b.name)), [db, categories]);
   const shown = q ? fuzzySearch(q, feats, (f) => ({ id: f.id, name: f.name, keywords: [f.description] })).map((h) => h.item) : feats;
   const taken = new Set(d.features.filter((f) => f.source.kind === 'feat').map((f) => f.def.id));
   return (
@@ -164,7 +192,7 @@ function FeatPicker({ selected, max, ch, d, onChange }: { selected: string[]; ma
           const dup = taken.has(f.id) && !sel && !f.repeatable;
           return (
             <button key={f.id} className={`option ${sel ? 'selected' : ''}`} style={{ opacity: (!pr.ok || dup) && !sel ? 0.55 : 1 }} onClick={() => onChange(toggle(selected, f.id, max))}>
-              <span className="title">{f.name} {db.isCustom('feat', f.id) && <span className="badge custom">custom</span>}{f.source.kind === 'summary' && <span className="badge">{f.source.book}</span>}</span>
+              <span className="title">{f.name} {f.category && <span className="badge">{f.category.replace('-', ' ')}</span>} {db.isCustom('feat', f.id) && <span className="badge custom">custom</span>}{f.source.kind === 'summary' && <span className="badge">{f.source.book}</span>}</span>
               <span className="desc">{f.description.length > 200 ? f.description.slice(0, 200) + '…' : f.description}</span>
               {!pr.ok && <span className="desc bad">{pr.reasons.join(' ')}</span>}
               {dup && <span className="desc bad">Already taken.</span>}
@@ -177,7 +205,7 @@ function FeatPicker({ selected, max, ch, d, onChange }: { selected: string[]; ma
 }
 
 function SpellChoice({ cv, d, onChange }: { cv: ChoiceView; d: Derived; onChange: (v: string[]) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [q, setQ] = useState('');
   const f = cv.def.spellFilter ?? {};
   const pool = useMemo(() => [...db.spells.values()].filter((s) =>

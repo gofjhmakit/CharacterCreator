@@ -14,7 +14,7 @@ export { Portrait };
 
 export function CharacterList() {
   const characters = useApp((s) => s.characters);
-  const db = useApp((s) => s.db);
+  const dbs = useApp((s) => s.dbs);
   const custom = useApp((s) => s.custom);
   const create = useApp((s) => s.createCharacter);
   const duplicate = useApp((s) => s.duplicate);
@@ -29,16 +29,17 @@ export function CharacterList() {
   const [importText, setImportText] = useState<string | null>(null);
 
   const rows = useMemo(() => Object.values(characters).map((c) => {
-    let summary = { classLine: '', level: 1, race: '', hp: '', ac: 0 };
+    let summary = { classLine: '', level: 1, race: '', hp: '', ac: 0, rules: c.ruleset === 'dnd5e-2024' ? '2024' : '2014' };
     try {
+      const db = dbs[c.ruleset] ?? dbs['dnd5e-2014'];
       const d = derive(c, db);
       const race = db.races.get(c.race.raceId);
       const sub = race?.subraces?.find((s) => s.id === c.race.subraceId);
-      summary = { classLine: d.classLine, level: d.totalLevel, race: sub?.name ?? race?.name ?? '—', hp: `${c.combat.hpCurrent}/${d.hp.max}`, ac: d.ac.total };
+      summary = { classLine: d.classLine, level: d.totalLevel, race: sub?.name ?? race?.name ?? '—', hp: `${c.combat.hpCurrent}/${d.hp.max}`, ac: d.ac.total, rules: c.ruleset === 'dnd5e-2024' ? '2024' : '2014' };
     } catch { /* show raw */ }
     return { c, ...summary };
   }).filter((r) => !q || `${r.c.identity.name} ${r.classLine} ${r.race} ${r.c.identity.playerName}`.toLowerCase().includes(q.toLowerCase()))
-    .sort((a, b) => b.c.updatedAt.localeCompare(a.c.updatedAt)), [characters, db, q]);
+    .sort((a, b) => b.c.updatedAt.localeCompare(a.c.updatedAt)), [characters, dbs, q]);
 
   const newChar = () => { const id = create(); go('new', id); };
 
@@ -67,9 +68,9 @@ export function CharacterList() {
         <div className="panel flush">
           <div className="table-wrap">
             <table className="data">
-              <thead><tr><th></th><th>Name</th><th>Class</th><th>Race</th><th className="num">Lvl</th><th className="num">HP</th><th className="num">AC</th><th>Updated</th><th></th></tr></thead>
+              <thead><tr><th></th><th>Name</th><th>Rules</th><th>Class</th><th>Race / species</th><th className="num">Lvl</th><th className="num">HP</th><th className="num">AC</th><th>Updated</th><th></th></tr></thead>
               <tbody>
-                {rows.map(({ c, classLine, level, race, hp, ac }) => (
+                {rows.map(({ c, classLine, level, race, hp, ac, rules }) => (
                   <tr key={c.id}>
                     <td style={{ width: 52 }}><Portrait c={c} size="sm" /></td>
                     <td>
@@ -77,6 +78,7 @@ export function CharacterList() {
                       {c.draft && <span className="badge" style={{ marginLeft: 6 }}>draft</span>}
                       {c.identity.playerName && <div className="small muted">{c.identity.playerName}</div>}
                     </td>
+                    <td><span className={`chip ${rules === '2024' ? 'blue' : ''}`}>{rules}</span></td>
                     <td>{classLine}</td>
                     <td>{race}</td>
                     <td className="num">{level}</td>
@@ -88,7 +90,7 @@ export function CharacterList() {
                         <button className="small" onClick={() => go(c.draft ? 'new' : 'c', c.id)}>{c.draft ? 'Continue' : 'Open'}</button>
                         <button className="small ghost" onClick={() => setRename(c)}>Rename</button>
                         <button className="small ghost" onClick={() => { duplicate(c.id); toast({ kind: 'success', text: 'Character duplicated.' }); }}>Duplicate</button>
-                        <button className="small ghost" onClick={() => downloadJson(`${safeFilename(c.identity.name)}.json`, exportCharacter(c, db))}>Export</button>
+                        <button className="small ghost" onClick={() => downloadJson(`${safeFilename(c.identity.name)}.json`, exportCharacter(c, dbs[c.ruleset] ?? dbs['dnd5e-2014']))}>Export</button>
                         <button className="small ghost danger" onClick={() => del(c)}>Delete</button>
                       </div>
                     </td>

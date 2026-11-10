@@ -1,3 +1,5 @@
+import { RulesetProvider } from '@/ui/ruleset';
+import type { RulesetId } from '@/types/core';
 // Custom content library: create/edit/duplicate/delete/import/export user content.
 import { useMemo, useRef, useState } from 'react';
 import { useApp } from '@/state/store';
@@ -14,6 +16,7 @@ import { SpellEditor, FeatEditor, BackgroundEditor, RaceEditor, SubclassEditor, 
 const KINDS: [ContentKind, string][] = [['item', 'Items'], ['spell', 'Spells'], ['feat', 'Feats'], ['feature', 'Features'], ['race', 'Races / species'], ['class', 'Classes'], ['subclass', 'Subclasses'], ['background', 'Backgrounds'], ['language', 'Languages'], ['proficiency', 'Proficiencies']];
 
 export function Library({ kind = 'item' }: { kind?: string }) {
+  const [libRules, setLibRules] = useState<RulesetId>(() => { try { return (localStorage.getItem('grimoire5e:libRules') as RulesetId) || 'dnd5e-2014'; } catch { return 'dnd5e-2014'; } });
   const k = (KINDS.find(([x]) => x === kind)?.[0] ?? 'item') as ContentKind;
   const custom = useApp((s) => s.custom);
   const characters = useApp((s) => s.characters);
@@ -42,7 +45,7 @@ export function Library({ kind = 'item' }: { kind?: string }) {
     const data = { ...structuredClone(r.data), id, name: `${(r.data as { name: string }).name} (copy)` } as never;
     await saveCustom({ kind: r.kind, id, data });
   };
-  const startNew = () => setEditing({ kind: k, id: '', data: (k === 'item' ? blankItem() : blankFor(k)) as never, createdAt: '', updatedAt: '' });
+  const startNew = () => setEditing({ kind: k, id: '', data: { ...(k === 'item' ? blankItem() : blankFor(k)), ruleset: k === 'item' || k === 'spell' || k === 'language' || k === 'proficiency' ? 'any' : libRules } as never, createdAt: '', updatedAt: '' });
   const save = async (data: { id: string; name: string }) => {
     await saveCustom({ kind: k, id: data.id, data: data as never });
     toast({ kind: 'success', text: `Saved “${data.name}”. Existing inventory copies are unchanged.` });
@@ -50,9 +53,15 @@ export function Library({ kind = 'item' }: { kind?: string }) {
   };
 
   return (
+    <RulesetProvider value={libRules}>
     <div className="stack lg">
       <div className="page-head">
         <h1>Library</h1>
+        <label className="row tight small">Templates & lists from
+          <select value={libRules} onChange={(e) => { setLibRules(e.target.value as RulesetId); try { localStorage.setItem('grimoire5e:libRules', e.target.value); } catch { /* ignore */ } }} style={{ width: 'auto' }}>
+            <option value="dnd5e-2014">2014 rules</option><option value="dnd5e-2024">2024 rules</option>
+          </select>
+        </label>
         <button onClick={() => fileRef.current?.click()}>Import content</button>
         <button onClick={() => downloadJson(`grimoire-content-${k}.json`, exportContent(list))} disabled={!list.length}>Export {KINDS.find(([x]) => x === k)?.[1].toLowerCase()}</button>
         <button onClick={() => downloadJson('grimoire-content-all.json', exportContent(custom))} disabled={!custom.length}>Export all content</button>
@@ -70,7 +79,7 @@ export function Library({ kind = 'item' }: { kind?: string }) {
               return (
                 <div key={r.id} className="list-row">
                   <span className="grow">
-                    <b>{data.name}</b> {used.length > 0 && <span className="badge" title={used.join(', ')}>used by {used.length}</span>}
+                    <b>{data.name}</b> <span className="badge">{(data as { ruleset?: string }).ruleset === 'dnd5e-2024' ? '2024' : (data as { ruleset?: string }).ruleset === 'dnd5e-2014' ? '2014' : 'both'}</span> {used.length > 0 && <span className="badge" title={used.join(', ')}>used by {used.length}</span>}
                     <div className="small muted">{r.kind === 'item' ? itemSummary(data as ItemDefinition) : (data.description ?? '').slice(0, 120)} · updated {fmtDate(r.updatedAt)}</div>
                   </span>
                   <button className="small" onClick={() => setEditing(structuredClone(r))}>Edit</button>
@@ -96,5 +105,6 @@ export function Library({ kind = 'item' }: { kind?: string }) {
       {node}
       {void go}
     </div>
+    </RulesetProvider>
   );
 }

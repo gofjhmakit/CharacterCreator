@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import { ABILITIES, ABILITY_NAMES, signed, type Ability } from '@/types/core';
@@ -6,6 +7,7 @@ import { useRoller } from '../../components/roll';
 import { Modal, BreakdownView } from '../../components/common';
 import { useApp } from '@/state/store';
 import { SpellDetailModal } from '../../components/spells';
+import { TriggerReminder } from './SpellsTab';
 import type { SpellDef } from '@/types/content';
 import { href } from '../../router';
 
@@ -90,7 +92,7 @@ function QuickSpells({ ch, d }: Pick<TabProps, 'ch' | 'd'>) {
 
 export function OverviewTab(p: TabProps) {
   const { ch, d } = p;
-  const db = useApp((s) => s.db);
+  const db = useDb();
   void db;
   return (
     <div className="stack lg">
@@ -113,6 +115,7 @@ export function OverviewTab(p: TabProps) {
           <QuickEffectsPanel ch={ch} set={p.set} />
           <QuickSpells ch={ch} d={d} />
           <DefensesPanel d={d} />
+          {d.triggers.length > 0 && <div className="panel stack"><div className="panel-title"><h3>Effects to remember</h3><span className="badge manual">triggered</span></div>{d.triggers.map((t, i) => <TriggerReminder key={i} r={t} set={p.set} />)}</div>}
           {d.manual.length > 0 && <div className="panel"><div className="panel-title"><h3>Manual effects</h3><span className="badge manual">apply yourself</span></div>{d.manual.map((m, i) => <div key={i} className="small" style={{ marginBottom: 4 }}><b>{m.name}</b>: {m.description}</div>)}</div>}
           {d.warnings.length > 0 && <div className="panel"><div className="panel-title"><h3>Rules notes</h3></div><ul className="warnings">{d.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
         </div>

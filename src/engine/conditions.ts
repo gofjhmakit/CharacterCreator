@@ -60,8 +60,15 @@ export const EXHAUSTION_LEVELS = [
   'Death',
 ];
 
-export function exhaustionModifiers(level: number): Modifier[] {
+export const EXHAUSTION_2024 = (level: number) => (level === 0 ? 'No exhaustion' : level >= 6 ? 'Death' : `−${2 * level} to d20 tests, speed −${5 * level} ft`);
+
+export function exhaustionModifiers(level: number, edition: '2014' | '2024' = '2014'): Modifier[] {
   const m: Modifier[] = [];
+  if (edition === '2024') {
+    if (level <= 0) return m;
+    const pen = -2 * Math.min(level, 6);
+    return [{ target: 'attack', value: pen }, { target: 'save:all', value: pen }, { target: 'check:all', value: pen }];
+  }
   if (level >= 1) m.push(dis('check:all'));
   if (level >= 3) { m.push(dis('attack')); m.push(dis('save:all')); }
   if (level >= 5) m.push(speed0);

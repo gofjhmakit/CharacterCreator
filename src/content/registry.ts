@@ -6,6 +6,7 @@ import type {
   BackgroundDef, ClassDef, ContentKind, CustomContentRecord, CustomLanguage, CustomProficiency, FeatDef,
   FeatureDef, ItemDefinition, OptionPool, RaceDef, SpellDef, SubclassDef,
 } from '@/types/content';
+import type { RulesetId } from '@/types/core';
 
 export interface ConditionDef { id: string; name: string; description: string }
 
@@ -42,7 +43,10 @@ export class ContentDB {
   /** Problems found while loading (invalid custom content etc.). */
   problems: string[] = [];
 
-  constructor(bundled: BundledContent, custom: CustomContentRecord[] = []) {
+  readonly ruleset: RulesetId;
+
+  constructor(bundled: BundledContent, custom: CustomContentRecord[] = [], ruleset: RulesetId = 'dnd5e-2014') {
+    this.ruleset = ruleset;
     for (const r of bundled.races) this.races.set(r.id, r);
     for (const c of bundled.classes) this.classes.set(c.id, c);
     for (const s of bundled.subclasses) this.subclasses.set(s.id, s);
@@ -56,6 +60,9 @@ export class ContentDB {
   }
 
   addCustom(rec: CustomContentRecord) {
+    // Custom content is usable in a ruleset when it's untagged, tagged 'any', or tagged with this ruleset.
+    const tag = (rec.data as { ruleset?: string } | undefined)?.ruleset;
+    if (tag && tag !== 'any' && tag !== this.ruleset) return;
     const map = this.mapFor(rec.kind) as Map<string, unknown>;
     if (!rec.data || typeof (rec.data as { id?: unknown }).id !== 'string') {
       this.problems.push(`Custom ${rec.kind} "${rec.id}" is malformed and was skipped.`);

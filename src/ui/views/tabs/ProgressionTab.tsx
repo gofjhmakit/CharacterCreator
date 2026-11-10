@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import { useApp } from '@/state/store';
@@ -10,7 +11,7 @@ import { ChoiceEditor, choiceComplete } from '../../components/ChoiceEditor';
 import type { Character } from '@/types/character';
 
 export function ProgressionTab({ ch, d, set, replace }: TabProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const toast = useApp((s) => s.toast);
   const { ask, node } = useConfirm();
   const [levelUp, setLevelUp] = useState(false);
@@ -95,7 +96,7 @@ export function ProgressionTab({ ch, d, set, replace }: TabProps) {
 }
 
 function HpHistory({ ch, set }: Pick<TabProps, 'ch' | 'set'>) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   return (
     <details className="panel">
       <summary><b>Hit point history</b> <span className="small muted">(edit rolled HP per level; empty = average)</span></summary>
@@ -121,7 +122,7 @@ function HpHistory({ ch, set }: Pick<TabProps, 'ch' | 'set'>) {
 }
 
 function LevelUpDialog({ ch, d, onClose, onApply }: { ch: Character; d: TabProps['d']; onClose: () => void; onApply: (c: Character) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [classId, setClassId] = useState(ch.classes[0]?.classId ?? '');
   const [hpMode, setHpMode] = useState<'average' | 'roll' | 'manual'>(ch.settings.hpMethod === 'roll' ? 'roll' : 'average');
   const [hpValue, setHpValue] = useState<number | null>(null);

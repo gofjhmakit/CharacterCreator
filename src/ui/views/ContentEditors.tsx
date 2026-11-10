@@ -1,3 +1,4 @@
+import { useDb, useRuleset, dbFor } from '@/ui/ruleset';
 // Structured editors for custom content (no JSON editing required).
 import { useState } from 'react';
 import type { BackgroundDef, ClassDef, ContentKind, FeatDef, FeatureDef, RaceDef, SpellDef, SubclassDef, CustomLanguage, CustomProficiency, CasterProgression, PreparationStyle } from '@/types/content';
@@ -11,6 +12,17 @@ import { SCHOOLS } from '../components/spells';
 import { validateFormula, FORMULA_VARS } from '@/engine/formula';
 
 const CUSTOM = { book: 'Homebrew', kind: 'custom' as const };
+
+/** Which ruleset(s) a custom definition is available in. */
+export function RulesetTagSelect({ value, onChange }: { value?: string; onChange: (v: 'dnd5e-2014' | 'dnd5e-2024' | 'any') => void }) {
+  return (
+    <Field label="Ruleset" hint="Where this content can be used">
+      <select value={value ?? 'any'} onChange={(e) => onChange(e.target.value as 'any')}>
+        <option value="any">Both 2014 and 2024</option><option value="dnd5e-2014">2014 only</option><option value="dnd5e-2024">2024 only</option>
+      </select>
+    </Field>
+  );
+}
 
 export function blankFor(k: ContentKind): { id: string; name: string } {
   const id = uid(k);
@@ -91,7 +103,7 @@ export function SpellEditor({ initial, onClose, onSave }: { initial: SpellDef; o
   return (
     <Shell title={initial.name ? `Edit spell: ${initial.name}` : 'New spell'} value={s} onClose={onClose} onSave={onSave}>
       <div className="field-row">
-        <Field label="Name" required><input value={s.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+        <Field label="Name" required><input value={s.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={s.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
         <Field label="Level"><select value={s.level} onChange={(e) => up({ level: Number(e.target.value) })}>{Array.from({ length: 10 }, (_, i) => <option key={i} value={i}>{i === 0 ? 'Cantrip' : i}</option>)}</select></Field>
         <Field label="School"><select value={s.school} onChange={(e) => up({ school: e.target.value })}>{SCHOOLS.map((x) => <option key={x} value={x}>{titleCase(x)}</option>)}</select></Field>
         <Field label="Casting time"><input value={s.castingTime} onChange={(e) => up({ castingTime: e.target.value })} /></Field>
@@ -110,7 +122,7 @@ export function SpellEditor({ initial, onClose, onSave }: { initial: SpellDef; o
         <Field label="Damage type"><select value={s.damageTypes?.[0] ?? ''} onChange={(e) => up({ damageTypes: e.target.value ? [e.target.value as never] : undefined })}><option value="">None</option>{DAMAGE_TYPES.map((d) => <option key={d} value={d}>{titleCase(d)}</option>)}</select></Field>
         <Field label={s.level === 0 ? 'Damage (at level 1)' : `Damage at level ${s.level}`}><input value={dmg} placeholder="e.g. 3d6" onChange={(e) => up({ damage: e.target.value ? (s.level === 0 ? { byCharLevel: { '1': e.target.value } } : { bySlot: { [String(s.level)]: e.target.value } }) : undefined })} /></Field>
       </div>
-      <div><span className="section-label">Class spell lists</span><div className="row">{['bard', 'cleric', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', ...[...useApp.getState().db.classes.keys()].filter((k) => useApp.getState().db.isCustom('class', k))].map((c) => <label key={c} className="check small"><input type="checkbox" checked={s.classes.includes(c)} onChange={(e) => up({ classes: e.target.checked ? [...s.classes, c] : s.classes.filter((x) => x !== c) })} />{titleCase(c)}</label>)}</div></div>
+      <div><span className="section-label">Class spell lists</span><div className="row">{['bard', 'cleric', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', ...[...dbFor(useRuleset()).classes.keys()].filter((k) => dbFor(useRuleset()).isCustom('class', k))].map((c) => <label key={c} className="check small"><input type="checkbox" checked={s.classes.includes(c)} onChange={(e) => up({ classes: e.target.checked ? [...s.classes, c] : s.classes.filter((x) => x !== c) })} />{titleCase(c)}</label>)}</div></div>
       <Field label="Description"><textarea rows={6} value={s.description} onChange={(e) => up({ description: e.target.value })} /></Field>
       <Field label="At higher levels"><textarea rows={2} value={s.higherLevels ?? ''} onChange={(e) => up({ higherLevels: e.target.value || undefined })} /></Field>
       <Field label="Source"><input value={s.source.book} onChange={(e) => up({ source: { ...s.source, book: e.target.value } })} /></Field>
@@ -124,7 +136,7 @@ export function FeatEditor({ kind, initial, onClose, onSave }: { kind: 'feat' | 
   return (
     <Shell title={initial.name ? `Edit: ${initial.name}` : kind === 'feat' ? 'New feat' : 'New feature'} value={f} onClose={onClose} onSave={onSave}>
       <div className="field-row">
-        <Field label="Name" required><input value={f.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+        <Field label="Name" required><input value={f.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={f.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
         <Field label="Source"><input value={f.source?.book ?? 'Homebrew'} onChange={(e) => up({ source: { ...CUSTOM, book: e.target.value } })} /></Field>
       </div>
       <Field label="Description"><textarea rows={4} value={f.description} onChange={(e) => up({ description: e.target.value })} /></Field>
@@ -161,7 +173,7 @@ export function BackgroundEditor({ initial, onClose, onSave }: { initial: Backgr
   const up = (p: Partial<BackgroundDef>) => setB({ ...b, ...p });
   return (
     <Shell title={initial.name ? `Edit background: ${initial.name}` : 'New background'} value={b} onClose={onClose} onSave={onSave}>
-      <Field label="Name" required><input value={b.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+      <Field label="Name" required><input value={b.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={b.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
       <Field label="Description"><textarea rows={3} value={b.description} onChange={(e) => up({ description: e.target.value })} /></Field>
       <SkillPick label="Skill proficiencies" value={(b.grants.skills ?? []) as SkillId[]} onChange={(skills) => up({ grants: { ...b.grants, skills } })} />
       <TagList label="Tool proficiencies" values={b.grants.tools ?? []} suggestions={[]} onChange={(tools) => up({ grants: { ...b.grants, tools } })} />
@@ -170,7 +182,7 @@ export function BackgroundEditor({ initial, onClose, onSave }: { initial: Backgr
         <Field label="Extra languages of choice"><input type="number" min={0} max={4} value={Number(b.choices?.find((c) => c.kind === 'language')?.count ?? 0)} onChange={(e) => { const n = Number(e.target.value) || 0; const others = (b.choices ?? []).filter((c) => c.kind !== 'language'); up({ choices: n ? [...others, { id: 'languages', label: 'Languages', kind: 'language', count: n }] : others }); }} /></Field>
         <Field label="Starting gold"><input type="number" min={0} value={b.gold} onChange={(e) => up({ gold: Number(e.target.value) || 0 })} /></Field>
       </div>
-      <TagList label="Starting equipment (item ids or names)" values={b.equipment.map((e) => e.itemId)} suggestions={[...useApp.getState().db.items.keys()].slice(0, 400)} onChange={(v) => up({ equipment: v.map((itemId) => ({ itemId })) })} />
+      <TagList label="Starting equipment (item ids or names)" values={b.equipment.map((e) => e.itemId)} suggestions={[...dbFor(useRuleset()).items.keys()].slice(0, 400)} onChange={(v) => up({ equipment: v.map((itemId) => ({ itemId })) })} />
       <div className="field-row"><Field label="Feature name"><input value={b.feature.name} onChange={(e) => up({ feature: { ...b.feature, name: e.target.value } })} /></Field></div>
       <Field label="Feature description"><textarea rows={3} value={b.feature.description} onChange={(e) => up({ feature: { ...b.feature, description: e.target.value } })} /></Field>
     </Shell>
@@ -185,7 +197,7 @@ export function RaceEditor({ initial, onClose, onSave }: { initial: RaceDef; onC
   return (
     <Shell title={initial.name ? `Edit race: ${initial.name}` : 'New race / species'} value={r} onClose={onClose} onSave={onSave}>
       <div className="field-row">
-        <Field label="Name" required><input value={r.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+        <Field label="Name" required><input value={r.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={r.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
         <Field label="Size"><select value={r.size} onChange={(e) => up({ size: e.target.value as RaceDef['size'] })}>{SIZES.map((s) => <option key={s} value={s}>{titleCase(s)}</option>)}</select></Field>
         {(['walk', 'fly', 'swim', 'climb', 'burrow'] as const).map((m) => <Field key={m} label={`${titleCase(m)} speed`}><input type="number" min={0} value={r.speed[m] ?? ''} onChange={(e) => up({ speed: { ...r.speed, [m]: e.target.value === '' ? undefined : Number(e.target.value), walk: m === 'walk' ? Number(e.target.value) || 0 : r.speed.walk } })} /></Field>)}
       </div>
@@ -204,13 +216,13 @@ export function RaceEditor({ initial, onClose, onSave }: { initial: RaceDef; onC
 }
 
 export function SubclassEditor({ initial, onClose, onSave }: { initial: SubclassDef; onClose: () => void; onSave: (s: SubclassDef) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [s, setS] = useState(initial);
   const up = (p: Partial<SubclassDef>) => setS({ ...s, ...p });
   return (
     <Shell title={initial.name ? `Edit subclass: ${initial.name}` : 'New subclass'} value={s} onClose={onClose} onSave={onSave}>
       <div className="field-row">
-        <Field label="Name" required><input value={s.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+        <Field label="Name" required><input value={s.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={s.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
         <Field label="Class"><select value={s.classId} onChange={(e) => up({ classId: e.target.value })}>{[...db.classes.values()].map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
         <Field label="Source"><input value={s.source.book} onChange={(e) => up({ source: { ...CUSTOM, book: e.target.value } })} /></Field>
       </div>
@@ -239,7 +251,7 @@ export function ClassEditor({ initial, onClose, onSave }: { initial: ClassDef; o
   return (
     <Shell title={initial.name ? `Edit class: ${initial.name}` : 'New class'} value={c} onClose={onClose} onSave={onSave}>
       <div className="field-row">
-        <Field label="Name" required><input value={c.name} onChange={(e) => up({ name: e.target.value })} /></Field>
+        <Field label="Name" required><input value={c.name} onChange={(e) => up({ name: e.target.value })} /></Field><RulesetTagSelect value={c.ruleset} onChange={(ruleset) => up({ ruleset } as never)} />
         <Field label="Hit die"><select value={c.hitDie} onChange={(e) => up({ hitDie: Number(e.target.value) })}>{[6, 8, 10, 12].map((d) => <option key={d} value={d}>d{d}</option>)}</select></Field>
         <Field label="Subclass label"><input value={c.subclassLabel} onChange={(e) => up({ subclassLabel: e.target.value })} /></Field>
         <Field label="Subclass at level"><input type="number" min={1} max={20} value={c.subclassLevel} onChange={(e) => up({ subclassLevel: Number(e.target.value) || 3 })} /></Field>
@@ -272,7 +284,7 @@ export function SimpleEditor({ kind, initial, onClose, onSave }: { kind: 'langua
   const [v, setV] = useState(initial);
   return (
     <Shell title={kind === 'language' ? 'Language' : 'Proficiency'} value={v} onClose={onClose} onSave={onSave}>
-      <Field label="Name" required><input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
+      <Field label="Name" required><input value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field><RulesetTagSelect value={v.ruleset} onChange={(ruleset) => setV({ ...v, ruleset } as never)} />
       {kind === 'proficiency' && <Field label="Group"><select value={(v as CustomProficiency).group} onChange={(e) => setV({ ...(v as CustomProficiency), group: e.target.value as 'tool' })}><option value="tool">Tool</option><option value="weapon">Weapon</option><option value="armor">Armor</option><option value="other">Other</option></select></Field>}
       <Field label="Description"><textarea rows={3} value={v.description ?? ''} onChange={(e) => setV({ ...v, description: e.target.value })} /></Field>
     </Shell>

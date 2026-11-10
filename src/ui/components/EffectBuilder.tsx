@@ -6,6 +6,29 @@ import { titleCase, Field } from './common';
 import { isValidDice } from '@/dice/dice';
 import { validateFormula, FORMULA_VARS } from '@/engine/formula';
 import { describeOutcomes } from '@/engine/derive';
+import { useDb } from '@/ui/ruleset';
+import { useMemo, useState } from 'react';
+import { fuzzySearch } from '@/search/fuzzy';
+
+/** Searchable spell selector (by name), storing the spell id. */
+export function SpellSelect({ value, onChange }: { value?: string; onChange: (id: string) => void }) {
+  const db = useDb();
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const all = useMemo(() => [...db.spells.values()], [db]);
+  const res = q ? fuzzySearch(q, all, (s) => ({ id: s.id, name: s.name })).slice(0, 12).map((h) => h.item) : [];
+  const cur = value ? db.spells.get(value) : undefined;
+  return (
+    <span style={{ position: 'relative', display: 'inline-block', width: 220 }}>
+      <input value={open ? q : cur?.name ?? value ?? ''} placeholder="Search spells…" onFocus={() => { setOpen(true); setQ(''); }} onBlur={() => setTimeout(() => setOpen(false), 150)} onChange={(e) => setQ(e.target.value)} />
+      {open && res.length > 0 && (
+        <div className="panel flush" style={{ position: 'absolute', zIndex: 5, left: 0, right: 0, maxHeight: 220, overflow: 'auto' }}>
+          {res.map((s) => <div key={s.id} className="list-row clickable" onMouseDown={() => { onChange(s.id); setOpen(false); }}><span className="grow">{s.name}</span><span className="small muted">{s.level === 0 ? 'cantrip' : `lvl ${s.level}`}</span></div>)}
+        </div>
+      )}
+    </span>
+  );
+}
 
 type Sub = 'none' | 'ability' | 'ability-all' | 'skill' | 'damage' | 'movement' | 'condition' | 'sense' | 'roll';
 interface Kind { id: string; label: string; sub: Sub; build: (sub: string) => ModifierTarget; op?: Modifier['op']; value?: 'number' | 'dice' | 'none' | 'range'; scope?: boolean; group: string }
@@ -55,6 +78,7 @@ const SCOPES: AttackScope[] = ['this-item', 'all', 'weapon', 'melee', 'ranged', 
 const SCOPE_LABEL: Record<AttackScope, string> = { 'this-item': 'This item only', all: 'All attacks', weapon: 'Weapon attacks', melee: 'Melee attacks', ranged: 'Ranged attacks', 'melee-weapon': 'Melee weapon attacks', 'ranged-weapon': 'Ranged weapon attacks', spell: 'Spell attacks', unarmed: 'Unarmed strikes', thrown: 'Thrown weapons' };
 const TRIGGERS: { id: Trigger | 'passive'; label: string }[] = [
   { id: 'passive', label: 'Passive (continuous)' }, { id: 'on-hit', label: 'On hit' }, { id: 'on-crit', label: 'On critical hit' }, { id: 'on-attack', label: 'On attack' },
+  { id: 'on-heal', label: 'When you heal a creature' }, { id: 'on-revive', label: 'When you revive a creature' },
   { id: 'on-damage-taken', label: 'When taking damage' }, { id: 'on-use', label: 'When using the item / feature' }, { id: 'start-of-turn', label: 'Start of turn' }, { id: 'end-of-turn', label: 'End of turn' }, { id: 'reaction', label: 'As a reaction' },
 ];
 const ACTIVATIONS: { id: EffectActivation; label: string }[] = [
@@ -62,7 +86,7 @@ const ACTIVATIONS: { id: EffectActivation; label: string }[] = [
 ];
 const OUTCOMES: { id: Outcome['kind']; label: string }[] = [
   { id: 'damage', label: 'Deal damage' }, { id: 'heal', label: 'Heal' }, { id: 'temp-hp', label: 'Grant temporary HP' }, { id: 'condition', label: 'Apply condition' }, { id: 'prone', label: 'Knock prone' },
-  { id: 'push', label: 'Push (ft)' }, { id: 'bonus', label: 'Grant a bonus' }, { id: 'penalty', label: 'Impose a penalty' }, { id: 'resource-restore', label: 'Restore a resource' }, { id: 'resource-consume', label: 'Consume a resource' }, { id: 'text', label: 'Other (describe)' },
+  { id: 'spell-effect', label: "Apply a spell's effect" }, { id: 'push', label: 'Push (ft)' }, { id: 'bonus', label: 'Grant a bonus' }, { id: 'penalty', label: 'Impose a penalty' }, { id: 'resource-restore', label: 'Restore a resource' }, { id: 'resource-consume', label: 'Consume a resource' }, { id: 'text', label: 'Other (describe)' },
 ];
 
 export function kindOf(m: Modifier): { kind: Kind; sub: string } {
@@ -93,6 +117,7 @@ export function effectProblems(e: Effect): string[] {
     if ((o.kind === 'damage' || o.kind === 'heal' || o.kind === 'temp-hp') && o.dice && !isValidDice(o.dice.replace(/\{[^}]*\}/g, '1'))) p.push(`“${o.dice}” is not valid dice.`);
   }
   if (e.save?.dc.kind === 'formula') { const err = validateFormula(e.save.dc.formula, FORMULA_VARS); if (err) p.push(`DC formula: ${err}`); }
+  for (const o of [...(e.outcomes ?? []), ...(e.save?.onFailure ?? []), ...(e.save?.onSuccess ?? [])]) if (o.kind === 'spell-effect' && !o.spellId) p.push('A “spell effect” outcome needs a spell.');
   return p;
 }
 
@@ -134,6 +159,14 @@ function EffectCard({ e, onChange, onRemove, onDuplicate, context }: { e: Effect
             {TRIGGERS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
         </Field>
+        {triggered && (
+          <Field label="Outcomes apply to">
+            <select value={e.target ?? 'target'} onChange={(x) => onChange({ ...e, target: x.target.value as 'target' })}>
+              <option value="target">{e.trigger === 'on-heal' ? 'The healed creature' : e.trigger === 'on-revive' ? 'The revived creature' : e.trigger === 'on-damage-taken' ? 'The attacker' : 'The affected creature'}</option>
+              <option value="self">You (the wearer / user)</option>
+            </select>
+          </Field>
+        )}
         {triggered && ['on-hit', 'on-crit', 'on-attack'].includes(e.trigger!) && (
           <Field label="Applies to">
             <select value={e.scope ?? 'this-item'} onChange={(x) => onChange({ ...e, scope: x.target.value as AttackScope })}>{SCOPES.filter((s) => context === 'item' || s !== 'this-item').map((s) => <option key={s} value={s}>{SCOPE_LABEL[s]}</option>)}</select>
@@ -263,6 +296,7 @@ function OutcomeList({ list, onChange }: { list: Outcome[]; onChange: (o: Outcom
             <Field label="Kind"><select value={o.kind} onChange={(x) => up({ kind: x.target.value as Outcome['kind'] })} style={{ width: 190 }}>{OUTCOMES.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}</select></Field>
             {['damage', 'heal', 'temp-hp', 'bonus', 'penalty'].includes(o.kind) && <Field label="Dice / amount"><input value={o.dice ?? ''} onChange={(x) => up({ dice: x.target.value })} style={{ width: 100 }} placeholder="1d6" /></Field>}
             {o.kind === 'damage' && <Field label="Type"><select value={o.damageType ?? ''} onChange={(x) => up({ damageType: (x.target.value || undefined) as Outcome['damageType'] })} style={{ width: 130 }}><option value="">—</option>{DAMAGE_TYPES.map((d) => <option key={d} value={d}>{titleCase(d)}</option>)}</select></Field>}
+            {o.kind === 'spell-effect' && <Field label="Spell"><SpellSelect value={o.spellId} onChange={(spellId) => up({ spellId })} /></Field>}
             {o.kind === 'condition' && <Field label="Condition"><select value={o.condition ?? 'prone'} onChange={(x) => up({ condition: x.target.value as Outcome['condition'] })} style={{ width: 140 }}>{CONDITION_IDS.map((c) => <option key={c} value={c}>{titleCase(c)}</option>)}</select></Field>}
             {(o.kind === 'push' || o.kind === 'resource-restore' || o.kind === 'resource-consume') && <Field label="Amount"><input type="number" value={o.amount ?? 1} onChange={(x) => up({ amount: Number(x.target.value) })} style={{ width: 80 }} /></Field>}
             {(o.kind === 'resource-restore' || o.kind === 'resource-consume') && <Field label="Resource id"><input value={o.resourceId ?? ''} onChange={(x) => up({ resourceId: x.target.value })} style={{ width: 140 }} placeholder="e.g. ki" /></Field>}
@@ -272,6 +306,7 @@ function OutcomeList({ list, onChange }: { list: Outcome[]; onChange: (o: Outcom
         );
       })}
       <button className="small" style={{ alignSelf: 'flex-start' }} onClick={() => onChange([...list, { kind: 'damage', dice: '1d6' }])}>+ Add outcome</button>
+      {list.some((o) => o.kind === 'spell-effect' && !o.spellId) && <span className="small bad">Choose the spell whose effect is applied.</span>}
     </div>
   );
 }

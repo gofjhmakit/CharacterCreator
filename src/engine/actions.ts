@@ -144,6 +144,14 @@ export function shortRest(ch: Character, d: Derived): { character: Character; su
   const restored: string[] = [];
   for (const r of d.resources) if (r.recharge === 'short' && r.used > 0) restored.push(r.name);
   resetResources(c, d, ['short']);
+  // Long-rest resources with partial short-rest recovery (2024: Rage, Channel Divinity, Wild Shape, Second Wind…)
+  for (const r of d.resources) {
+    if (r.shortRecover && r.recharge !== 'short' && r.used > 0 && c.resources[r.id]) {
+      const back = Math.min(r.used, r.shortRecover);
+      c.resources[r.id].used -= back;
+      restored.push(`${r.name} (+${back})`);
+    }
+  }
   if (c.spells.pactSlotsUsed > 0) { restored.push('Pact Magic slots'); c.spells.pactSlotsUsed = 0; }
   // Innate per-short-rest spells stored on entries
   for (const e of c.spells.entries) if (e.uses && e.uses.recharge === 'short' && e.uses.used > 0) { e.uses.used = 0; restored.push(e.spellId); }
@@ -167,7 +175,7 @@ export function longRest(ch: Character, d: Derived, opts: { dawn?: boolean; rng?
   c.combat.stable = false;
   c.combat.conditions = c.combat.conditions.filter((x) => x !== 'unconscious');
   const totalDice = d.hitDice.reduce((s, h) => s + h.total, 0);
-  let regain = Math.max(1, Math.floor(totalDice / 2));
+  let regain = d.rules?.longRestHitDice === 'all' ? totalDice : Math.max(1, Math.floor(totalDice / 2));
   // Restore larger dice first (player-favourable, common table practice)
   for (const h of [...d.hitDice].sort((a, b) => b.die - a.die)) {
     const used = c.combat.hitDiceUsed[String(h.die)] ?? 0;

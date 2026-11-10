@@ -6,6 +6,9 @@ import type {
   Ability, DamageType, MovementMode, Rarity, Recharge, RulesetId, Size, SkillId, ConditionId,
 } from './core';
 
+/** Which ruleset a definition belongs to. Custom content may be usable in both ('any'). */
+export type RulesetTag = RulesetId | 'any';
+
 /** Where a definition comes from. `license` documents legal basis for bundled data. */
 export interface SourceInfo {
   /** Short book/pack key, e.g. "SRD 5.1", "PHB", "TCoE", "Homebrew". */
@@ -93,7 +96,9 @@ export type Requirement =
 
 export type Trigger =
   | 'passive' | 'on-attack' | 'on-hit' | 'on-crit' | 'on-damage-taken' | 'on-use'
-  | 'start-of-turn' | 'end-of-turn' | 'on-save' | 'on-check' | 'reaction';
+  | 'start-of-turn' | 'end-of-turn' | 'on-save' | 'on-check' | 'reaction'
+  | 'on-heal'     // when you restore hit points to a creature
+  | 'on-revive';  // when you restore a creature from 0 HP or death
 
 export type EffectActivation =
   | 'always'      // always active while the source is active (feature, racial trait)
@@ -104,7 +109,7 @@ export type EffectActivation =
 
 export type OutcomeKind =
   | 'damage' | 'heal' | 'temp-hp' | 'condition' | 'prone' | 'push' | 'bonus' | 'penalty'
-  | 'resource-restore' | 'resource-consume' | 'text';
+  | 'resource-restore' | 'resource-consume' | 'spell-effect' | 'text';
 
 export interface Outcome {
   kind: OutcomeKind;
@@ -115,6 +120,8 @@ export interface Outcome {
   resourceId?: string;
   text?: string;
   duration?: string;
+  /** 'spell-effect': the spell whose effect is applied (e.g. blade-ward, death-ward). */
+  spellId?: string;
 }
 
 export interface SaveSpec {
@@ -145,6 +152,8 @@ export interface Effect {
   trigger?: Trigger;
   /** Scope of a triggered effect (which attacks it rides on). */
   scope?: AttackScope;
+  /** Who the outcomes apply to: the affected creature (hit / healed / revived) or yourself. */
+  target?: 'target' | 'self';
   outcomes?: Outcome[];
   save?: SaveSpec;
   oncePerTurn?: boolean;
@@ -212,7 +221,8 @@ export type ChoiceKind =
   | 'asi'           // Ability Score Improvement or feat
   | 'feat'          // pick a feat
   | 'spell'         // pick spells (filter)
-  | 'damage-type';
+  | 'damage-type'
+  | 'ability-split'; // 2024 background increase: +2/+1 or +1/+1/+1 among `from` (values: 3 picks, max 2 per ability)
 
 export interface ChoiceDef {
   id: string;
@@ -232,6 +242,10 @@ export interface ChoiceDef {
   optional?: boolean;
   /** Allow choosing the same option multiple times (ASI +1/+1 to same) */
   allowRepeat?: boolean;
+  /** Feat / ASI choices: restrict selectable feats to these categories (2024 rules). */
+  featCategories?: FeatCategory[];
+  /** Feat / ASI choices: hard maximum for the ability score increases (e.g. 30 for Epic Boons). */
+  abilityMax?: number;
 }
 
 export interface Prerequisite {
@@ -255,7 +269,7 @@ export interface ResourceDef {
   name: string;
   max: Formula;
   recharge: Recharge;
-  /** Partial recovery on short rest (e.g. Arcane Recovery is separate; Wild Shape full). */
+  /** Long-rest resources that also regain this many uses on a short rest (2024 Rage, Channel Divinity…). */
   shortRestRecover?: Formula;
   /** Die associated (Bardic Inspiration d6 → d12, Superiority d8...). */
   die?: Formula | string;
@@ -268,6 +282,7 @@ export interface ResourceDef {
 export type ActivationType = 'passive' | 'action' | 'bonus' | 'reaction' | 'special' | 'free' | 'minute' | 'hour';
 
 export interface FeatureDef {
+  ruleset?: RulesetTag;
   id: string;
   name: string;
   description: string;
@@ -313,7 +328,7 @@ export interface SubraceDef {
 export interface RaceDef {
   id: string;
   name: string;
-  ruleset: RulesetId;
+  ruleset: RulesetTag;
   description: string;
   source: SourceInfo;
   size: Size;
@@ -332,14 +347,20 @@ export interface RaceDef {
 export interface BackgroundDef {
   id: string;
   name: string;
-  ruleset: RulesetId;
+  ruleset: RulesetTag;
   description: string;
   source: SourceInfo;
   grants: Grants;
   choices?: ChoiceDef[];
   equipment: StartingItem[];
   gold: number;
+  /** 2024: the alternative to the equipment package (usually 50 gp). */
+  goldAlternative?: number;
   feature: FeatureDef;
+  /** 2024: the three abilities this background can increase (+2/+1 or +1/+1/+1). */
+  abilityOptions?: Ability[];
+  /** 2024: origin feat granted by the background, with optional pre-set choices (e.g. Magic Initiate: Cleric). */
+  originFeat?: { id: string; presetChoices?: Record<string, string[]>; note?: string };
   suggested?: { traits?: string[]; ideals?: string[]; bonds?: string[]; flaws?: string[] };
 }
 
@@ -351,7 +372,7 @@ export interface StartingItem {
 
 export interface StartingEquipmentChoice {
   label: string;
-  options: { label: string; items: StartingItem[] }[];
+  options: { label: string; items: StartingItem[]; gold?: number }[];
 }
 
 export type CasterProgression = 'full' | 'half' | 'third' | 'pact' | 'none' | 'half-up';
@@ -383,7 +404,7 @@ export interface SpellcastingDef {
 export interface ClassDef {
   id: string;
   name: string;
-  ruleset: RulesetId;
+  ruleset: RulesetTag;
   description: string;
   source: SourceInfo;
   hitDie: number;
@@ -416,7 +437,7 @@ export interface SubclassDef {
   id: string;
   classId: string;
   name: string;
-  ruleset: RulesetId;
+  ruleset: RulesetTag;
   description: string;
   source: SourceInfo;
   features: FeatureDef[];
@@ -425,10 +446,14 @@ export interface SubclassDef {
   spells?: { level: number; spells: string[]; mode: SpellGrant['mode'] }[];
 }
 
+export type FeatCategory = 'origin' | 'general' | 'fighting-style' | 'epic-boon';
+
 export interface FeatDef {
   id: string;
   name: string;
-  ruleset: RulesetId;
+  ruleset: RulesetTag;
+  /** 2024 feat category. */
+  category?: FeatCategory;
   description: string;
   source: SourceInfo;
   prerequisite?: Prerequisite;
@@ -437,7 +462,7 @@ export interface FeatDef {
   choices?: ChoiceDef[];
   resource?: ResourceDef;
   /** Feat gives +1 to an ability ("half feat"). */
-  abilityIncrease?: { from: Ability[]; amount: number };
+  abilityIncrease?: { from: Ability[]; amount: number; max?: number };
   repeatable?: boolean;
 }
 
@@ -475,6 +500,7 @@ export interface SpellDef {
   higherLevels?: string;
   tags?: string[];
   source: SourceInfo;
+  ruleset?: RulesetTag;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +537,8 @@ export interface WeaponData {
   range?: { normal: number; long?: number };
   /** Base weapon id used for proficiency checks (e.g. "longsword"). */
   baseWeapon?: string;
+  /** 2024 Weapon Mastery property id (cleave, graze, nick, push, sap, slow, topple, vex). */
+  mastery?: string;
   attackBonus?: number;
   damageBonus?: number;
   /** Override attack ability; 'auto' picks STR/DEX per finesse/ranged rules. */
@@ -529,6 +557,20 @@ export interface ArmorData {
   stealthDisadvantage?: boolean;
   /** Magical/additional bonus to AC. */
   bonus?: number;
+}
+
+export interface ItemSpell {
+  spellId: string;
+  /** Free casts per recharge period (omit when the spell costs charges or is at will). */
+  uses?: number;
+  recharge?: Recharge;
+  /** Charges spent per cast (uses the item's charges). */
+  chargeCost?: number;
+  /** Fixed save DC / attack bonus for the item (otherwise the user's own spellcasting). */
+  dc?: number;
+  attack?: number;
+  castLevel?: number;
+  note?: string;
 }
 
 export interface ItemDefinition {
@@ -553,6 +595,8 @@ export interface ItemDefinition {
   cursed?: boolean;
   curse?: string;
   activation?: string;
+  /** Spells the item lets its user cast (while equipped/attuned as required). */
+  spells?: ItemSpell[];
   contents?: { itemId: string; quantity: number }[];
   effects: Effect[];
   /** Base item this definition was derived from (provenance / template). */
@@ -561,6 +605,7 @@ export interface ItemDefinition {
   image?: string; // data URL (custom items only, size limited)
   /** Allows content packs to keep unknown fields. */
   extra?: Record<string, unknown>;
+  ruleset?: RulesetTag;
 }
 
 // ---------------------------------------------------------------------------
@@ -571,8 +616,8 @@ export type ContentKind =
   | 'item' | 'spell' | 'feat' | 'race' | 'class' | 'subclass' | 'background' | 'feature'
   | 'language' | 'proficiency';
 
-export interface CustomLanguage { id: string; name: string; description?: string; source: SourceInfo }
-export interface CustomProficiency { id: string; name: string; group: 'tool' | 'weapon' | 'armor' | 'other'; description?: string; source: SourceInfo }
+export interface CustomLanguage { id: string; name: string; description?: string; source: SourceInfo; ruleset?: RulesetTag }
+export interface CustomProficiency { id: string; name: string; group: 'tool' | 'weapon' | 'armor' | 'other'; description?: string; source: SourceInfo; ruleset?: RulesetTag }
 
 export interface ContentByKind {
   item: ItemDefinition;

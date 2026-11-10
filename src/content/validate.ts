@@ -78,6 +78,7 @@ export function validateItem(i: ItemDefinition, where = `item:${i.id}`): Content
   for (const x of i.weapon?.extraDamage ?? []) if (!isValidDice(x.dice)) out.push({ level: 'error', where, message: `Bad extra damage dice "${x.dice}"` });
   if (i.armor && (typeof i.armor.baseAc !== 'number' || i.armor.baseAc < 0)) out.push({ level: 'error', where, message: 'Invalid base AC' });
   for (const e of i.effects ?? []) validateEffect(e, where, out);
+  if (i.spells !== undefined && (!Array.isArray(i.spells) || i.spells.some((s) => !s || typeof s.spellId !== 'string' || !s.spellId))) out.push({ level: 'error', where, message: 'Invalid castable spell entry' });
   return out;
 }
 

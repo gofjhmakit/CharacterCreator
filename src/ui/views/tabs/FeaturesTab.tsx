@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import type { ActiveFeature } from '@/engine/derive';
@@ -92,7 +93,7 @@ export function FeaturesTab({ ch, d, set }: TabProps) {
 type CF = TabProps['ch']['custom']['features'][number];
 
 function CustomFeatureDialog({ ch, existingId, onClose, onSave, onDelete }: { ch: TabProps['ch']; existingId: string | null; onClose: () => void; onSave: (f: CF) => void; onDelete: (id: string) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const existing = existingId ? ch.custom.features.find((x) => x.id === existingId) : undefined;
   const [f, setF] = useState<CF>(existing ?? { id: uid('cf'), name: '', description: '', effects: [] });
   const [featPick, setFeatPick] = useState('');

@@ -1,10 +1,11 @@
+import { useDb } from '@/ui/ruleset';
 // Item editor used for (a) reusable custom item definitions/templates and (b) individual inventory instances.
 import { useMemo, useState } from 'react';
 import type { ItemDefinition, ItemCategory, WeaponProperty } from '@/types/content';
 import { ITEM_CATEGORY_LABEL, WEAPON_PROPERTIES } from '@/types/content';
 import { ABILITIES, DAMAGE_TYPES, RARITIES, RARITY_LABEL, type Recharge } from '@/types/core';
 import { Field, titleCase } from './common';
-import { EffectBuilder, effectProblems } from './EffectBuilder';
+import { EffectBuilder, effectProblems, SpellSelect } from './EffectBuilder';
 import { useApp } from '@/state/store';
 import { searchItems } from '@/search/fuzzy';
 import { validateItem } from '@/content/validate';
@@ -23,13 +24,14 @@ export function fromTemplate(t: ItemDefinition): ItemDefinition {
 
 export function itemErrors(i: ItemDefinition): string[] {
   const errs = validateItem(i).filter((x) => x.level === 'error').map((x) => x.message);
+  if (i.spells?.some((s) => !s.spellId)) errs.push('Choose a spell for each castable spell (or remove the empty row).');
   if (!i.name.trim()) errs.unshift('Name is required.');
   for (const e of i.effects) errs.push(...effectProblems(e));
   return [...new Set(errs)];
 }
 
 export function TemplatePicker({ onPick }: { onPick: (i: ItemDefinition) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [q, setQ] = useState('');
   const items = useMemo(() => [...db.items.values()], [db]);
   const res = q ? searchItems(q, items, {}, 30) : [];
@@ -52,7 +54,7 @@ export function itemSummary(i: ItemDefinition): string {
 }
 
 export function ItemRow({ item, onClick, action, extra }: { item: ItemDefinition; onClick?: () => void; action?: string; extra?: React.ReactNode }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   return (
     <div className="list-row clickable" onClick={onClick}>
       <span className="grow">
@@ -92,6 +94,7 @@ export function ItemEditor({ value, onChange, mode }: { value: ItemDefinition; o
             <Field label="Weight (lb, each)"><input type="number" min={0} step={0.1} value={i.weight} onChange={(e) => up({ weight: Math.max(0, Number(e.target.value) || 0) })} /></Field>
             <Field label="Value"><div className="row tight"><input type="number" min={0} value={i.cost?.amount ?? ''} onChange={(e) => up({ cost: e.target.value === '' ? undefined : { amount: Number(e.target.value), unit: i.cost?.unit ?? 'gp' } })} style={{ width: 90 }} /><select value={i.cost?.unit ?? 'gp'} onChange={(e) => up({ cost: { amount: i.cost?.amount ?? 0, unit: e.target.value as 'gp' } })} style={{ width: 70 }}>{['cp', 'sp', 'ep', 'gp', 'pp'].map((u) => <option key={u}>{u}</option>)}</select></div></Field>
             <Field label="Source"><input value={i.source.book} onChange={(e) => up({ source: { ...i.source, book: e.target.value } })} /></Field>
+            {mode === 'template' && <Field label="Ruleset"><select value={i.ruleset ?? 'any'} onChange={(e) => up({ ruleset: e.target.value as ItemDefinition['ruleset'] })}><option value="any">Both 2014 and 2024</option><option value="dnd5e-2014">2014 only</option><option value="dnd5e-2024">2024 only</option></select></Field>}
             <label className="check" style={{ alignSelf: 'end' }}><input type="checkbox" checked={i.magical} onChange={(e) => up({ magical: e.target.checked })} />Magical</label>
           </div>
           <Field label="Description"><textarea rows={4} value={i.description} onChange={(e) => up({ description: e.target.value })} /></Field>
@@ -121,6 +124,7 @@ export function ItemEditor({ value, onChange, mode }: { value: ItemDefinition; o
           </div>
           {i.charges?.rechargeAmount && !isValidDice(i.charges.rechargeAmount) && <span className="small bad">Recharge amount is not valid dice.</span>}
           <Field label="Activation"><input value={i.activation ?? ''} onChange={(e) => up({ activation: e.target.value || undefined })} placeholder="e.g. Action, command word" /></Field>
+          <ItemSpellsEditor i={i} up={up} />
           <div className="field-row">
             <label className="check"><input type="checkbox" checked={!!i.consumable} onChange={(e) => up({ consumable: e.target.checked ? { destroyOnUse: true } : undefined })} />Consumable (quantity decreases on use)</label>
             <label className="check"><input type="checkbox" checked={!!i.cursed} onChange={(e) => up({ cursed: e.target.checked })} />Cursed</label>
@@ -154,7 +158,7 @@ function ItemImage({ value, onChange }: { value?: string; onChange: (v?: string)
 }
 
 function WeaponEditor({ i, up }: { i: ItemDefinition; up: (p: Partial<ItemDefinition>) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   if (!i.weapon) return <div className="stack"><p className="muted">This item has no weapon statistics.</p><button onClick={() => up({ category: i.category === 'gear' ? 'weapon' : i.category, weapon: { category: 'simple', kind: 'melee', damage: { dice: '1d6', type: 'slashing' }, properties: [] } })}>Add weapon statistics</button></div>;
   const w = i.weapon;
   const uw = (p: Partial<typeof w>) => up({ weapon: { ...w, ...p } });
@@ -219,6 +223,37 @@ function ArmorEditor({ i, up }: { i: ItemDefinition; up: (p: Partial<ItemDefinit
       </div>}
       <p className="small muted">Additional AC modifiers (e.g. “+1 AC while attuned”) can be added on the Effects tab.</p>
       <button className="small ghost danger" style={{ alignSelf: 'flex-start' }} onClick={() => up({ armor: undefined })}>Remove armor statistics</button>
+    </div>
+  );
+}
+
+function ItemSpellsEditor({ i, up }: { i: ItemDefinition; up: (p: Partial<ItemDefinition>) => void }) {
+  const db = useDb();
+  const list = i.spells ?? [];
+  const set = (j: number, p: Partial<NonNullable<ItemDefinition['spells']>[number]>) => up({ spells: list.map((x, k) => (k === j ? { ...x, ...p } : x)) });
+  return (
+    <div className="stack">
+      <span className="section-label">Spells this item lets you cast</span>
+      {list.length === 0 && <span className="small muted">None. Example: gloves that cast Revivify once per day.</span>}
+      {list.map((sp, j) => (
+        <div key={j} className="row" style={{ alignItems: 'flex-end', borderTop: '1px dashed var(--line)', paddingTop: 6 }}>
+          <Field label="Spell"><SpellSelect value={sp.spellId} onChange={(spellId) => set(j, { spellId })} /></Field>
+          <Field label="How it's cast">
+            <select value={sp.chargeCost ? 'charges' : sp.uses ? 'uses' : 'at-will'} onChange={(e) => set(j, e.target.value === 'charges' ? { chargeCost: 1, uses: undefined } : e.target.value === 'uses' ? { uses: 1, recharge: 'long', chargeCost: undefined } : { uses: undefined, chargeCost: undefined })} style={{ width: 170 }}>
+              <option value="uses">Limited uses</option><option value="charges">Spend item charges</option><option value="at-will">At will</option>
+            </select>
+          </Field>
+          {sp.uses !== undefined && <><Field label="Uses"><input type="number" min={1} value={sp.uses} onChange={(e) => set(j, { uses: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 70 }} /></Field>
+            <Field label="Recharge"><select value={sp.recharge ?? 'long'} onChange={(e) => set(j, { recharge: e.target.value as Recharge })} style={{ width: 130 }}><option value="long">Long rest</option><option value="dawn">Dawn</option><option value="short">Short rest</option><option value="none">Never</option></select></Field></>}
+          {sp.chargeCost !== undefined && <Field label="Charges per cast"><input type="number" min={1} value={sp.chargeCost} onChange={(e) => set(j, { chargeCost: Math.max(1, Number(e.target.value) || 1) })} style={{ width: 80 }} /></Field>}
+          <Field label="Fixed save DC" hint="empty = your own"><input type="number" value={sp.dc ?? ''} onChange={(e) => set(j, { dc: e.target.value ? Number(e.target.value) : undefined })} style={{ width: 80 }} /></Field>
+          <Field label="Fixed attack" hint="empty = your own"><input type="number" value={sp.attack ?? ''} onChange={(e) => set(j, { attack: e.target.value ? Number(e.target.value) : undefined })} style={{ width: 80 }} /></Field>
+          <button className="small ghost danger" onClick={() => up({ spells: list.filter((_, k) => k !== j) })} aria-label="Remove spell">✕</button>
+          {!db.spells.get(sp.spellId) && sp.spellId && <span className="small bad">Unknown spell.</span>}
+        </div>
+      ))}
+      <button className="small" style={{ alignSelf: 'flex-start' }} onClick={() => up({ spells: [...list, { spellId: '', uses: 1, recharge: 'long' }] })}>+ Add spell</button>
+      {list.some((x) => x.chargeCost) && !i.charges && <span className="small bad">Charge-based spells need “Has charges” enabled above.</span>}
     </div>
   );
 }

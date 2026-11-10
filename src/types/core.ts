@@ -73,7 +73,7 @@ export const RARITY_LABEL: Record<Rarity, string> = {
 export type RulesetId = 'dnd5e-2014' | 'dnd5e-2024';
 export const RULESETS: Record<RulesetId, { name: string; supported: boolean }> = {
   'dnd5e-2014': { name: 'D&D 5e (2014)', supported: true },
-  'dnd5e-2024': { name: 'D&D 5e (2024) — not yet supported', supported: false },
+  'dnd5e-2024': { name: 'D&D 5e (2024)', supported: true },
 };
 
 export type ProficiencyLevel = 0 | 0.5 | 1 | 2; // none, half (JoAT), proficient, expertise

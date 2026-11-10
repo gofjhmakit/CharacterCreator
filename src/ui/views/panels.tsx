@@ -3,7 +3,7 @@ import { useState } from 'react';
 import type { Character } from '@/types/character';
 import type { AttackView, Derived } from '@/engine/derive';
 import { CONDITION_IDS, DAMAGE_TYPES, RECHARGE_LABEL, signed, ABILITIES, ABILITY_NAMES } from '@/types/core';
-import { CONDITION_SUMMARY, EXHAUSTION_LEVELS } from '@/engine/conditions';
+import { CONDITION_SUMMARY, EXHAUSTION_LEVELS, EXHAUSTION_2024 } from '@/engine/conditions';
 import { applyDamage, applyHealing, setTempHp, rollDeathSave, shortRest, longRest, spendHitDie } from '@/engine/actions';
 import { useApp } from '@/state/store';
 import { useRoller } from '../components/roll';
@@ -126,9 +126,9 @@ export function ConditionsPanel({ ch, d, set }: Omit<P, 'replace'>) {
         {active.length === 0 && ch.combat.exhaustion === 0 && <span className="muted small">None</span>}
         {active.map((c) => <span key={c} className="chip red" title={CONDITION_SUMMARY[c]}>{titleCase(c)}<button aria-label={`Remove ${c}`} onClick={() => set((x) => { x.combat.conditions = x.combat.conditions.filter((y) => y !== c); })}>✕</button></span>)}
         {d.activeConditions.filter((c) => !active.includes(c)).map((c) => <span key={c} className="chip" title="Implied by another condition">{titleCase(c)}</span>)}
-        {ch.combat.exhaustion > 0 && <span className="chip red" title={EXHAUSTION_LEVELS.slice(1, ch.combat.exhaustion + 1).join('; ')}>Exhaustion {ch.combat.exhaustion}</span>}
+        {ch.combat.exhaustion > 0 && <span className="chip red" title={d.rules.exhaustion === '2024' ? EXHAUSTION_2024(ch.combat.exhaustion) : EXHAUSTION_LEVELS.slice(1, ch.combat.exhaustion + 1).join('; ')}>Exhaustion {ch.combat.exhaustion}</span>}
       </div>
-      <div className="row"><span className="caps">Exhaustion</span><Stepper value={ch.combat.exhaustion} min={0} max={6} onChange={(v) => set((c) => { c.combat.exhaustion = v; })} /><span className="small muted">{EXHAUSTION_LEVELS[ch.combat.exhaustion]}</span></div>
+      <div className="row"><span className="caps">Exhaustion</span><Stepper value={ch.combat.exhaustion} min={0} max={6} onChange={(v) => set((c) => { c.combat.exhaustion = v; })} /><span className="small muted">{d.rules.exhaustion === '2024' ? EXHAUSTION_2024(ch.combat.exhaustion) : EXHAUSTION_LEVELS[ch.combat.exhaustion]}</span></div>
       {open && (
         <Modal title="Conditions" onClose={() => setOpen(false)}>
           <div className="stack">
@@ -154,7 +154,7 @@ export function ResourcesPanel({ ch, d, set }: Omit<P, 'replace'>) {
       <div className="list">
         {d.resources.map((r) => (
           <div key={r.id} className="list-row" style={{ flexWrap: 'wrap' }}>
-            <span className="grow"><b>{r.name}</b>{r.die && <span className="chip gold" style={{ marginLeft: 6 }}>{r.die}</span>}<br /><span className="small muted">{RECHARGE_LABEL[r.recharge]}{r.overridden ? ' · max overridden' : ''}</span></span>
+            <span className="grow"><b>{r.name}</b>{r.die && <span className="chip gold" style={{ marginLeft: 6 }}>{r.die}</span>}<br /><span className="small muted">{RECHARGE_LABEL[r.recharge]}{r.shortRecover ? ` (regain ${r.shortRecover} on a short rest)` : ''}{r.overridden ? ' · max overridden' : ''}</span></span>
             {r.max >= 99 ? <span className="small">Unlimited</span> : r.pool || r.max > 8
               ? <span className="row tight"><Stepper value={r.remaining} min={0} max={r.max} onChange={(v) => set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: r.max - v }; })} /><span className="small muted">/ {r.max}</span></span>
               : <Pips max={r.max} used={r.used} onSet={(u) => set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: u }; })} />}
@@ -239,6 +239,7 @@ export function AttacksPanel({ ch, d, compact }: { ch: Character; d: Derived; co
                   <td>
                     <button className="ghost small" style={{ padding: 0, minHeight: 0, fontWeight: 700 }} onClick={() => setInfo(a)}>{a.name}</button>
                     {a.riders.length > 0 && <div className="rider">{a.riders.map((r) => `${r.trigger === 'on-crit' ? 'Crit' : 'Hit'}: ${r.label}`).join(' · ')}</div>}
+                    {a.mastery && <div className="rider" title={a.mastery.description}><span className="chip gold">Mastery: {a.mastery.name}</span></div>}
                     {a.extraDamage.length > 0 && <div className="rider">{a.extraDamage.map((x) => `+${x.dice} ${x.type}${x.condition ? ` (${x.condition})` : ''}`).join(', ')}</div>}
                   </td>
                   <td className="num"><button className={`small ${a.attack.mode === 'advantage' ? 'adv-dot' : a.attack.mode === 'disadvantage' ? 'dis-dot' : ''}`} style={{ position: 'relative' }} onClick={() => roller.d20(`${a.name} attack`, a.attack, 'attack', { critRange: a.critRange, halflingLucky: d.flags.has('halfling-lucky') })}>{signed(a.attack.total)}</button></td>
@@ -277,6 +278,7 @@ export function AttacksPanel({ ch, d, compact }: { ch: Character; d: Derived; co
             <dt>Range</dt><dd>{info.range}</dd>
             <dt>Critical</dt><dd>{info.critRange}–20 (dice doubled)</dd>
           </dl>
+          {info.mastery && <div className="notice" style={{ marginTop: 8 }}><b>Weapon Mastery: {info.mastery.name}</b><div className="small">{info.mastery.description}</div></div>}
           {info.riders.map((r, i) => <div key={i} className="notice" style={{ marginTop: 8 }}><b>{r.trigger === 'on-crit' ? 'On critical hit' : r.trigger === 'on-attack' ? 'On attack' : 'On hit'}: {r.label}</b>{r.oncePerTurn ? ' (once per turn)' : ''}<div className="small">{r.text}</div>
             {r.outcomes?.filter((o) => o.kind === 'damage' && o.dice).map((o, j) => <button key={j} className="small" style={{ marginTop: 4 }} onClick={() => roller.expr(`${r.label}`, o.dice!, 'damage')}>Roll {o.dice} {o.damageType ?? ''}</button>)}
           </div>)}

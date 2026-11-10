@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useRef, useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import { useApp } from '@/state/store';
@@ -13,7 +14,7 @@ import type { Character } from '@/types/character';
 const OVERRIDES: [keyof Character['settings']['overrides'], string][] = [['ac', 'Armor Class'], ['maxHp', 'Max HP'], ['initiative', 'Initiative'], ['speed', 'Walking speed'], ['passivePerception', 'Passive Perception'], ['spellDc', 'Spell save DC'], ['spellAttack', 'Spell attack'], ['profBonus', 'Proficiency bonus']];
 
 export function CharSettingsTab({ ch, d, set }: TabProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const duplicate = useApp((s) => s.duplicate);
   const remove = useApp((s) => s.remove);
   const { ask, node } = useConfirm();
@@ -42,10 +43,10 @@ export function CharSettingsTab({ ch, d, set }: TabProps) {
       <div className="panel stack">
         <h3>Origin</h3>
         <div className="field-row">
-          <Field label="Race"><select value={ch.race.raceId} onChange={(e) => set((c) => { c.race = { raceId: e.target.value }; })}>{[...db.races.values()].sort((a, b) => a.name.localeCompare(b.name)).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
+          <Field label={d.rules.terms.race}><select value={ch.race.raceId} onChange={(e) => set((c) => { c.race = { raceId: e.target.value }; })}>{[...db.races.values()].sort((a, b) => a.name.localeCompare(b.name)).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
           {race?.subraces?.length ? <Field label="Subrace"><select value={ch.race.subraceId ?? ''} onChange={(e) => set((c) => { c.race.subraceId = e.target.value || undefined; })}><option value="">—</option>{race.subraces.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></Field> : null}
           <Field label="Background"><select value={ch.background.backgroundId} onChange={(e) => set((c) => { c.background.backgroundId = e.target.value; })}><option value="">—</option>{[...db.backgrounds.values()].sort((a, b) => a.name.localeCompare(b.name)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></Field>
-          <Field label="Ruleset"><select value={ch.ruleset} onChange={(e) => set((c) => { c.ruleset = e.target.value as Character['ruleset']; })}>{Object.entries(RULESETS).map(([k, v]) => <option key={k} value={k} disabled={!v.supported}>{v.name}</option>)}</select></Field>
+          <Field label="Ruleset" hint="Fixed after creation: 2014 and 2024 content use different ids. Duplicate and rebuild to switch."><input value={RULESETS[ch.ruleset].name} readOnly /></Field>
         </div>
         <p className="small muted">Changing race or background keeps earlier choices stored but only applies those relevant to the new selection. Class levels are managed on the <a href={href('c', ch.id, 'progression')}>Progression</a> tab. You can reopen the <a href={href('new', ch.id)}>creation wizard</a> at any time.</p>
       </div>

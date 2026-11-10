@@ -2,7 +2,7 @@ import { useApp } from '@/state/store';
 import { CONTENT_COVERAGE, CONTENT_VERSION } from '@/content';
 
 export function About() {
-  const db = useApp((s) => s.db);
+  const dbs = useApp((s) => s.dbs);
   const count = (m: Map<string, { source?: { kind: string } }>) => {
     let srd = 0, summary = 0, custom = 0;
     for (const v of m.values()) { const k = v.source?.kind; if (k === 'srd') srd++; else if (k === 'custom') custom++; else summary++; }
@@ -11,18 +11,17 @@ export function About() {
   return (
     <div className="stack lg" style={{ maxWidth: 900 }}>
       <h1>About Grimoire</h1>
-      <p>An offline-first D&D 5th Edition (2014 rules) character builder and manager. It runs entirely in your browser: no account, no server, no tracking. Characters are saved locally and can be exported as JSON.</p>
+      <p>An offline-first D&D 5th Edition character builder and manager supporting both the 2014 and the 2024 rules (kept strictly separate per character). It runs entirely in your browser: no account, no server, no tracking. Characters are saved locally and can be exported as JSON.</p>
       <div className="panel">
         <h3>Bundled content (v{CONTENT_VERSION})</h3>
-        <dl className="kv" style={{ marginTop: 8 }}>
-          <dt>Races</dt><dd>{count(db.races)}</dd>
-          <dt>Classes</dt><dd>{count(db.classes)}</dd>
-          <dt>Subclasses</dt><dd>{count(db.subclasses)}</dd>
-          <dt>Backgrounds</dt><dd>{count(db.backgrounds)}</dd>
-          <dt>Feats</dt><dd>{count(db.feats)}</dd>
-          <dt>Spells</dt><dd>{count(db.spells)}</dd>
-          <dt>Items</dt><dd>{count(db.items)}</dd>
-        </dl>
+        <div className="table-wrap"><table className="data" style={{ marginTop: 8 }}>
+          <thead><tr><th></th><th>2014 rules</th><th>2024 rules</th></tr></thead>
+          <tbody>
+            {([['Races / species', 'races'], ['Classes', 'classes'], ['Subclasses', 'subclasses'], ['Backgrounds', 'backgrounds'], ['Feats', 'feats'], ['Spells', 'spells'], ['Items', 'items']] as const).map(([label, k]) => (
+              <tr key={k}><td>{label}</td><td>{count(dbs['dnd5e-2014'][k] as Map<string, { source?: { kind: string } }>)}</td><td>{count(dbs['dnd5e-2024'][k] as Map<string, { source?: { kind: string } }>)}</td></tr>
+            ))}
+          </tbody>
+        </table></div>
         <p className="small" style={{ marginTop: 10 }}>{CONTENT_COVERAGE.srd}</p>
         <p className="small">{CONTENT_COVERAGE.summary}</p>
         <p className="small muted">This is not a complete copy of every published option. Add anything missing in the Library.</p>

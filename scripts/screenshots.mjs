@@ -96,6 +96,42 @@ await step('persistence after reload', async () => {
   await page.reload();
   await page.getByRole('heading', { name: 'Lyra Duskmantle' }).waitFor();
 });
+await step('create 2024 character', async () => {
+  await page.goto(base);
+  await page.getByRole('button', { name: 'New character' }).click();
+  await page.getByPlaceholder('e.g. Seraphine Vale').fill('Bryn Ironhold');
+  await page.locator('label:has-text("Ruleset") select').selectOption('dnd5e-2024');
+  await page.getByRole('button', { name: /Next: Species/ }).click();
+  await page.getByRole('button', { name: /^Dwarf/ }).click();
+  await page.getByRole('button', { name: /Next: Class/ }).click();
+  await page.getByRole('button', { name: /^Fighter/ }).click();
+  await page.getByRole('button', { name: /Next: Subclass/ }).click();
+  await page.getByRole('button', { name: /Next: Background/ }).click();
+  await page.getByRole('button', { name: /^Soldier/ }).click();
+  await page.getByRole('button', { name: '+1 to all three' }).click();
+  await page.screenshot({ path: 'screenshots/2024-background.png', fullPage: true });
+  await page.getByRole('button', { name: /Next: Ability Scores/ }).click();
+  await page.getByRole('button', { name: /Next: Proficiencies/ }).click();
+  await page.screenshot({ path: 'screenshots/2024-choices.png', fullPage: true });
+  await page.getByRole('button', { name: /Next: Equipment/ }).click();
+  await page.getByRole('button', { name: /Add to inventory/ }).click();
+  await page.getByRole('button', { name: /Next: Spells/ }).click();
+  await page.getByRole('button', { name: /Next: Details/ }).click();
+  await page.getByRole('button', { name: /Next: Review/ }).click();
+  await page.getByRole('button', { name: 'Create character' }).click();
+  await page.getByRole('heading', { name: 'Bryn Ironhold' }).waitFor();
+  await page.getByText('2024 rules').first().waitFor();
+  await page.screenshot({ path: 'screenshots/2024-overview.png', fullPage: true });
+  await page.goto(page.url().replace(/#\/c\/([^/]+).*/, '#/c/$1/inventory'));
+  await page.screenshot({ path: 'screenshots/2024-inventory.png', fullPage: true });
+  await page.goto(page.url().replace(/#\/c\/([^/]+).*/, '#/c/$1/features'));
+  await page.screenshot({ path: 'screenshots/2024-features.png', fullPage: true });
+});
+await step('back to 2014 character', async () => {
+  await page.goto(base);
+  await page.getByRole('link', { name: 'Lyra Duskmantle' }).click();
+  await page.getByRole('heading', { name: 'Lyra Duskmantle' }).waitFor();
+});
 await shots('desktop');
 for (const [name, w, h] of [['mobile', 375, 812], ['tablet', 820, 1180], ['laptop', 1280, 800], ['4k', 2560, 1440]]) {
   await page.setViewportSize({ width: w, height: h });

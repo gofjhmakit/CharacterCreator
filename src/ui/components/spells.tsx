@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import type { SpellDef } from '@/types/content';
 import type { Character } from '@/types/character';
@@ -57,22 +58,42 @@ export function availableSpells(cv: CasterView, d: Derived, all: SpellDef[], ch:
 }
 
 export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: Derived; cv: CasterView; onAdd: (s: SpellDef) => void; onRemove: (s: SpellDef) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [q, setQ] = useState('');
   const [lvl, setLvl] = useState<number | 'all'>('all');
   const [school, setSchool] = useState('all');
   const [conc, setConc] = useState<'any' | 'yes' | 'no'>('any');
   const [ritual, setRitual] = useState(false);
   const [detail, setDetail] = useState<SpellDef | null>(null);
-  const pool = useMemo(() => availableSpells(cv, d, [...db.spells.values()], ch), [cv, d, db, ch]);
+  const [listFilter, setListFilter] = useState<string>('mine');
+  const [time, setTime] = useState('any');
+  const all = useMemo(() => [...db.spells.values()], [db]);
+  const mine = useMemo(() => availableSpells(cv, d, all, ch), [cv, d, all, ch]);
+  const mineIds = useMemo(() => new Set(mine.map((x) => x.id)), [mine]);
+  const pool = useMemo(() => {
+    if (listFilter === 'mine') return mine;
+    const base = listFilter === 'all' ? all : all.filter((x) => x.classes.includes(listFilter));
+    // Show everything up to your castable level; off-list spells are allowed (homebrew) but labelled.
+    return base.filter((x) => x.level <= Math.max(cv.maxSpellLevel, 0)).map((x) => mine.find((m) => m.id === x.id) ?? x);
+  }, [listFilter, mine, all, cv.maxSpellLevel]);
+  const className = db.classes.get(cv.classId)?.name ?? cv.name;
+  const classOptions = useMemo(() => [...new Set(all.flatMap((x) => x.classes))].sort(), [all]);
   const owned = new Set(ch.spells.entries.filter((e) => e.classId === cv.classId).map((e) => e.spellId));
   const granted = new Set(d.spells.filter((s) => s.granted).map((s) => s.spellId));
-  let list = pool.filter((s) => (lvl === 'all' || s.level === lvl) && (school === 'all' || s.school === school) && (conc === 'any' || (conc === 'yes') === s.concentration) && (!ritual || s.ritual));
+  let list = pool.filter((s) => (lvl === 'all' || s.level === lvl) && (school === 'all' || s.school === school) && (conc === 'any' || (conc === 'yes') === s.concentration) && (!ritual || s.ritual) && matchesTime(s.castingTime, time));
   list = q ? fuzzySearch(q, list, (s) => ({ id: s.id, name: s.name, keywords: [s.school, s.castingTime, ...(s.damageTypes ?? []), ...(s.tags ?? [])] })).map((h) => h.item) : list.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   return (
     <div className="stack">
       <div className="row">
         <input className="grow" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 160 }} />
+        <select value={listFilter} onChange={(e) => setListFilter(e.target.value)} style={{ width: 'auto' }} aria-label="Spell list">
+          <option value="mine">{className} list (incl. subclass)</option>
+          {classOptions.map((c) => <option key={c} value={c}>{titleCase(c)} spells</option>)}
+          <option value="all">All spells</option>
+        </select>
+        <select value={time} onChange={(e) => setTime(e.target.value)} style={{ width: 'auto' }} aria-label="Casting time">
+          <option value="any">Any casting time</option><option value="action">Action</option><option value="bonus">Bonus action</option><option value="reaction">Reaction</option><option value="long">1 minute or longer</option>
+        </select>
         <select value={lvl} onChange={(e) => setLvl(e.target.value === 'all' ? 'all' : Number(e.target.value))} style={{ width: 'auto' }} aria-label="Level">
           <option value="all">All levels</option>
           {Array.from({ length: cv.maxSpellLevel + 1 }, (_, i) => <option key={i} value={i}>{lvlLabel(i)}</option>)}
@@ -87,7 +108,7 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
           <tbody>
             {list.slice(0, 200).map((s) => (
               <tr key={s.id}>
-                <td><button className="ghost small" style={{ padding: 0, minHeight: 0 }} onClick={() => setDetail(s)}>{s.name}</button>{s.concentration && <span className="badge" title="Concentration">C</span>} {s.ritual && <span className="badge" title="Ritual">R</span>} {s.tags?.includes('restricted-school') && <span className="badge warn" title="Outside your subclass schools — only allowed at specific levels">school</span>} {db.isCustom('spell', s.id) && <span className="badge custom">custom</span>}</td>
+                <td><button className="ghost small" style={{ padding: 0, minHeight: 0 }} onClick={() => setDetail(s)}>{s.name}</button>{s.concentration && <span className="badge" title="Concentration">C</span>} {s.ritual && <span className="badge" title="Ritual">R</span>} {s.tags?.includes('restricted-school') && <span className="badge warn" title="Outside your subclass schools — only allowed at specific levels">school</span>} {db.isCustom('spell', s.id) && <span className="badge custom">custom</span>} {!mineIds.has(s.id) && <span className="badge warn" title={`Not normally available to a ${className}. You can still add it (homebrew / DM permission).`}>not a {className} spell</span>}</td>
                 <td className="nowrap">{s.level === 0 ? 'Cantrip' : s.level}</td>
                 <td>{titleCase(s.school)}</td>
                 <td className="small">{s.castingTime}</td>
@@ -101,6 +122,18 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
       {detail && <SpellDetailModal spell={detail} onClose={() => setDetail(null)} />}
     </div>
   );
+}
+
+/** Casting-time buckets for filtering (handles 2014 "1 action" and 2024 "Action" wording). */
+export function matchesTime(castingTime: string, bucket: string): boolean {
+  const t = castingTime.toLowerCase();
+  switch (bucket) {
+    case 'action': return /^(1 )?action/.test(t);
+    case 'bonus': return /bonus/.test(t);
+    case 'reaction': return /reaction/.test(t);
+    case 'long': return /minute|hour/.test(t);
+    default: return true;
+  }
 }
 
 export function addClassSpell(c: Character, s: SpellDef, cv: CasterView) {

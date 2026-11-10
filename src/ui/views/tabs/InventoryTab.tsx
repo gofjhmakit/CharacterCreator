@@ -1,3 +1,4 @@
+import { useDb } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import type { InventoryItem } from '@/types/character';
@@ -5,7 +6,7 @@ import type { ItemDefinition } from '@/types/content';
 import { ITEM_CATEGORY_LABEL } from '@/types/content';
 import { RARITY_LABEL, RARITIES } from '@/types/core';
 import { useApp } from '@/state/store';
-import { addItem, resyncFromTemplate, instanceDiffersFromTemplate, setAttuned } from '@/engine/inventory';
+import { addItem, resyncFromTemplate, instanceDiffersFromTemplate, setAttuned, setEquipped } from '@/engine/inventory';
 import { applyHealing, useConsumable as consume } from '@/engine/actions';
 import { searchItems } from '@/search/fuzzy';
 import { Modal, Stepper, Empty, NumberField, useConfirm, titleCase } from '../../components/common';
@@ -15,7 +16,7 @@ import { rollExpression } from '@/dice/dice';
 import { describeOutcomes } from '@/engine/derive';
 
 export function InventoryTab({ ch, d, set, replace }: TabProps) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const toast = useApp((s) => s.toast);
   const saveCustom = useApp((s) => s.saveCustom);
   const roller = useRoller();
@@ -110,7 +111,7 @@ export function InventoryTab({ ch, d, set, replace }: TabProps) {
                       </td>
                       <td className="num"><Stepper value={it.quantity} min={1} max={9999} onChange={(v) => set((x) => { const y = x.inventory.find((z) => z.id === it.id); if (y) y.quantity = v; })} /></td>
                       <td className="num small">{it.excludeWeight ? '—' : +(it.item.weight * it.quantity).toFixed(2)}</td>
-                      <td>{equippable && <input type="checkbox" aria-label={`Equip ${it.item.name}`} checked={it.equipped} onChange={(e) => set((x) => { const y = x.inventory.find((z) => z.id === it.id); if (y) { y.equipped = e.target.checked; if (!e.target.checked) y.offHand = false; } })} />}
+                      <td>{equippable && <input type="checkbox" aria-label={`Equip ${it.item.name}`} checked={it.equipped} onChange={(e) => { const r = setEquipped(ch, it.id, e.target.checked); replace(r.character); if (r.unequipped.length) toast({ kind: 'info', text: `Equipped ${it.item.name}`, detail: `Unequipped ${r.unequipped.join(', ')} (slot full: one armor, two hands, two rings).` }); }} />}
                         {it.equipped && it.item.weapon?.kind === 'melee' && it.item.weapon.properties.includes('light') && <label className="check small" title="Off-hand (two-weapon fighting)"><input type="checkbox" checked={!!it.offHand} onChange={(e) => set((x) => { const y = x.inventory.find((z) => z.id === it.id); if (y) y.offHand = e.target.checked; })} />off</label>}
                       </td>
                       <td>{it.item.attunement?.required && <input type="checkbox" aria-label={`Attune ${it.item.name}`} checked={it.attuned} onChange={(e) => attune(it, e.target.checked)} title={it.item.attunement.restriction ? `Requires attunement by ${it.item.attunement.restriction}` : ''} />}</td>
@@ -178,7 +179,7 @@ function ItemDetail({ it, onClose, onRoll }: { it: InventoryItem; onClose: () =>
 }
 
 export function AddItemDialog({ onClose, onAdd, onCreate }: { onClose: () => void; onAdd: (def: ItemDefinition, qty: number) => void; onCreate: (base?: ItemDefinition) => void }) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('any');
   const [magic, setMagic] = useState<'any' | 'magic' | 'mundane'>('any');
@@ -210,6 +211,7 @@ export function AddItemDialog({ onClose, onAdd, onCreate }: { onClose: () => voi
 
 export function CreateItemDialog({ initial, onClose, onSave, templateOnly }: { initial: ItemDefinition; onClose: () => void; onSave: (def: ItemDefinition, addToInventory: boolean, saveTemplate: boolean) => void; templateOnly?: boolean }) {
   const [item, setItem] = useState(initial);
+  const tplDb = useDb();
   const [saveTpl, setSaveTpl] = useState(true);
   const [picking, setPicking] = useState(!initial.name && !templateOnly);
   const errs = itemErrors(item);
@@ -231,7 +233,7 @@ export function CreateItemDialog({ initial, onClose, onSave, templateOnly }: { i
           </div>
         ) : (
           <>
-            {item.baseItemId && <div className="small muted">Based on: {useApp.getState().db.items.get(item.baseItemId)?.name ?? item.baseItemId} <button className="small ghost" onClick={() => setPicking(true)}>Choose another template</button></div>}
+            {item.baseItemId && <div className="small muted">Based on: {tplDb.items.get(item.baseItemId)?.name ?? item.baseItemId} <button className="small ghost" onClick={() => setPicking(true)}>Choose another template</button></div>}
             <ItemEditor mode="template" value={item} onChange={setItem} />
           </>
         )}

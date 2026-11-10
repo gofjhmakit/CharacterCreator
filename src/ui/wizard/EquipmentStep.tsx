@@ -1,9 +1,11 @@
+import { useDb } from '@/ui/ruleset';
 import { useMemo } from 'react';
 import type { Character } from '@/types/character';
 import type { Derived } from '@/engine/derive';
 import type { ItemDefinition, StartingItem } from '@/types/content';
 import { useApp } from '@/state/store';
-import { instantiateItem } from '@/engine/inventory';
+import { instantiateItem, setEquipped, handsFor } from '@/engine/inventory';
+import type { InventoryItem } from '@/types/character';
 import { rollExpression } from '@/dice/dice';
 import { Empty } from '../components/common';
 import { ARTISAN_TOOLS } from '@/types/core';
@@ -20,19 +22,23 @@ export function placeholderOptions(id: string, items: ItemDefinition[]): ItemDef
     case '@martial-melee': return w.filter((i) => i.weapon!.category === 'martial' && i.weapon!.kind === 'melee');
     case '@instrument': return items.filter((i) => i.category === 'instrument');
     case '@artisan': return items.filter((i) => i.category === 'tool' && ARTISAN_TOOLS.some((t) => t.toLowerCase() === i.name.toLowerCase()));
+    case '@cat:holy-symbols': return items.filter((i) => i.category === 'focus' && /emblem|amulet|reliquary|holy/i.test(i.id + i.name));
+    case '@cat:any': return items.filter((i) => i.category === 'instrument' || (i.category === 'tool' && /tools|supplies|utensils/i.test(i.name)));
     default: return [];
   }
 }
 
 export function EquipmentStep({ ch, d, set }: Props) {
-  const db = useApp((s) => s.db);
+  const db = useDb();
   const items = useMemo(() => [...db.items.values()], [db]);
   const cls = db.classes.get(ch.classes[0]?.classId ?? '');
   const bg = db.backgrounds.get(ch.background.backgroundId);
   void d;
   if (!cls) return <Empty>Choose a class first.</Empty>;
   const mode = ch.choices['wizard:equip-mode']?.[0] ?? 'package';
+  const bgGoldInstead = ch.choices['wizard:bg-gold']?.[0] === '1';
   const sel = (gi: number) => Number(ch.choices[`wizard:equip:${gi}`]?.[0] ?? 0);
+  const packageGold = mode === 'package' ? cls.startingEquipment.reduce((sum, g, gi) => sum + (g.options[sel(gi)]?.gold ?? 0), 0) : 0;
   const ph = (key: string) => ch.choices[`wizard:ph:${key}`]?.[0];
   const setC = (k: string, v: string[]) => set((c) => { c.choices[k] = v; });
 
@@ -61,7 +67,7 @@ export function EquipmentStep({ ch, d, set }: Props) {
       cls.startingEquipment.forEach((g, gi) => push(g.options[sel(gi)]?.items ?? [], `g${gi}:${sel(gi)}`));
       push(cls.startingFixed, 'fixed');
     }
-    if (bg) push(bg.equipment, 'bg');
+    if (bg && !bgGoldInstead) push(bg.equipment, 'bg');
     return out;
   };
 
@@ -77,12 +83,25 @@ export function EquipmentStep({ ch, d, set }: Props) {
     }
     for (const { def, qty } of merged) {
       const inst = instantiateItem(def, { quantity: qty });
-      if (def.armor || (def.weapon && added.filter((id) => c.inventory.find((x) => x.id === id)?.item.weapon).length < 2)) inst.equipped = true;
       c.inventory.push(inst); added.push(inst.id);
     }
+    // Auto-equip within slot limits: best armor, a shield, then weapons while hands remain.
+    let next: Character = c;
+    const pick = (pred: (i: InventoryItem) => boolean) => next.inventory.filter((i) => added.includes(i.id) && pred(i));
+    const body = pick((i) => !!i.item.armor && i.item.armor.category !== 'shield').sort((a, b) => b.item.armor!.baseAc - a.item.armor!.baseAc)[0];
+    if (body) next = setEquipped(next, body.id, true).character;
+    const shield = pick((i) => i.item.armor?.category === 'shield')[0];
+    if (shield) next = setEquipped(next, shield.id, true).character;
+    let hands = shield ? 1 : 0;
+    for (const w of pick((i) => !!i.item.weapon && i.item.weapon.kind === 'melee')) {
+      const h = handsFor(w);
+      if (hands + h > 2) continue;
+      next = setEquipped(next, w.id, true).character; hands += h;
+    }
+    c.inventory = next.inventory;
     c.choices['wizard:equip-items'] = added;
     c.choices['wizard:equip-applied'] = ['1'];
-    const gold = (bg?.gold ?? 0) + (mode === 'gold' ? Number(c.choices['wizard:gold']?.[0] ?? 0) : 0);
+    const gold = (bg ? (bgGoldInstead ? bg.goldAlternative ?? 50 : bg.gold) : 0) + packageGold + (mode === 'gold' ? Number(c.choices['wizard:gold']?.[0] ?? 0) : 0);
     const prevGold = Number(c.choices['wizard:gold-applied']?.[0] ?? 0);
     c.currency.gp = Math.max(0, c.currency.gp - prevGold + gold);
     c.choices['wizard:gold-applied'] = [String(gold)];
@@ -98,7 +117,7 @@ export function EquipmentStep({ ch, d, set }: Props) {
     <div className="stack lg">
       <div className="btn-group">
         <button className={mode === 'package' ? 'on' : ''} onClick={() => setC('wizard:equip-mode', ['package'])}>Starting equipment</button>
-        <button className={mode === 'gold' ? 'on' : ''} onClick={() => setC('wizard:equip-mode', ['gold'])}>Starting gold instead ({cls.startingGold.replace('x', ' × ')} gp)</button>
+        {!cls.startingEquipment.some((g) => g.options.some((o) => o.gold && !o.items.length)) && <button className={mode === 'gold' ? 'on' : ''} onClick={() => setC('wizard:equip-mode', ['gold'])}>Starting gold instead ({cls.startingGold.replace('x', ' × ')} gp)</button>}
       </div>
       {mode === 'package' ? (
         <div className="stack">
@@ -108,7 +127,7 @@ export function EquipmentStep({ ch, d, set }: Props) {
               {g.options.map((o, oi) => (
                 <label key={oi} className="check" style={{ alignItems: 'flex-start' }}>
                   <input type="radio" name={`eq-${gi}`} checked={sel(gi) === oi} onChange={() => setC(`wizard:equip:${gi}`, [String(oi)])} />
-                  <span className="stack" style={{ gap: 4 }}><span>{o.label}</span>{sel(gi) === oi && renderItems(o.items, `g${gi}:${oi}`)}</span>
+                  <span className="stack" style={{ gap: 4 }}><span>{o.label}</span>{sel(gi) === oi && o.items.length > 0 && renderItems(o.items, `g${gi}:${oi}`)}{sel(gi) === oi && o.gold ? <span className="chip gold">{o.gold} gp</span> : null}</span>
                 </label>
               ))}
             </div>
@@ -118,7 +137,10 @@ export function EquipmentStep({ ch, d, set }: Props) {
       ) : (
         <div className="row"><button onClick={rollGold}>Roll {cls.startingGold.replace('x', ' × ')}</button><span>Gold: <b className="num">{ch.choices['wizard:gold']?.[0] ?? '—'}</b> gp</span><span className="small muted">Buy equipment from the Inventory tab after creation.</span></div>
       )}
-      {bg && <div><span className="section-label">From background ({bg.name})</span>{renderItems(bg.equipment, 'bg')} <span className="chip gold">{bg.gold} gp</span></div>}
+      {bg && <div className="stack"><span className="section-label">From background ({bg.name})</span>
+        {bg.goldAlternative !== undefined && <div className="btn-group"><button className={`small ${!bgGoldInstead ? 'on' : ''}`} onClick={() => setC('wizard:bg-gold', ['0'])} disabled={!bg.equipment.length}>Equipment{bg.gold ? ` + ${bg.gold} gp` : ''}</button><button className={`small ${bgGoldInstead ? 'on' : ''}`} onClick={() => setC('wizard:bg-gold', ['1'])}>{bg.goldAlternative} gp instead</button></div>}
+        {!bgGoldInstead && <div>{renderItems(bg.equipment, 'bg')} {bg.gold ? <span className="chip gold">{bg.gold} gp</span> : null}</div>}
+      </div>}
       <div className="row">
         <button className="primary" onClick={apply}>{ch.choices['wizard:equip-applied']?.length ? 'Re-apply to inventory' : 'Add to inventory'}</button>
         {ch.choices['wizard:equip-applied']?.length ? <span className="small good">Added {ch.choices['wizard:equip-items']?.length ?? 0} items. Re-applying replaces them.</span> : <span className="small muted">Optional — you can manage inventory later.</span>}

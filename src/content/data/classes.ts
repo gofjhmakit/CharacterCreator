@@ -380,7 +380,6 @@ const sorcerer: ClassDef = {
 const WARLOCK_KNOWN = [2, 3, 4, 5, 6, 7, 8, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15];
 const arcanum = (lvl: number, spellLevel: number) => f(lvl, `mystic-arcanum-${spellLevel}`, `Mystic Arcanum (${spellLevel}th level)`, 'Choose one warlock spell of this level as an arcanum. You can cast it once without expending a spell slot and regain the ability after a long rest.', {
   choices: [choice('spell', `Arcanum spell (level ${spellLevel})`, 'spell', 1, { spellFilter: { classes: ['warlock'], levels: [spellLevel] }, spellMode: 'innate' })],
-  resource: res(`mystic-arcanum-${spellLevel}`, `Mystic Arcanum (${spellLevel})`, 1, 'long'),
 });
 const warlock: ClassDef = {
   id: 'warlock', name: 'Warlock', ruleset: 'dnd5e-2014', source: SRD,

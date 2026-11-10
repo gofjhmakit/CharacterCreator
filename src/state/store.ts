@@ -9,6 +9,7 @@ import { newCharacter, uid } from '@/engine/factory';
 import { migrateCharacter } from '@/io/migrations';
 import { validateCharacter } from '@/io/schema';
 import type { RollResult } from '@/dice/dice';
+import type { RulesetId } from '@/types/core';
 
 export type SaveState = { status: 'saved' | 'pending' | 'saving' | 'error'; error?: string; at?: number };
 
@@ -36,7 +37,8 @@ interface AppState {
   characters: Record<string, Character>;
   saves: Record<string, SaveState>;
   custom: CustomContentRecord[];
-  db: ContentDB;
+  /** One content database per ruleset (2014 and 2024 content never mix). */
+  dbs: Record<RulesetId, ContentDB>;
   rolls: RollResult[];
   toasts: Toast[];
   prefs: AppPrefs;
@@ -59,6 +61,13 @@ interface AppState {
   setDiceOpen(v: boolean): void;
 }
 
+export function buildDbs(custom: CustomContentRecord[]): Record<RulesetId, ContentDB> {
+  return {
+    'dnd5e-2014': new ContentDB(bundledContent('dnd5e-2014'), custom, 'dnd5e-2014'),
+    'dnd5e-2024': new ContentDB(bundledContent('dnd5e-2024'), custom, 'dnd5e-2024'),
+  };
+}
+
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const SAVE_DELAY = 350;
 
@@ -68,7 +77,7 @@ export const useApp = create<AppState>((set, get) => ({
   characters: {},
   saves: {},
   custom: [],
-  db: new ContentDB(bundledContent()),
+  dbs: buildDbs([]),
   rolls: [],
   toasts: [],
   prefs: loadPrefs(),
@@ -92,9 +101,9 @@ export const useApp = create<AppState>((set, get) => ({
         } else loadErrors.push(`Character ${(raw as Character).identity?.name || raw.id}: ${v.errors.join('; ')}`);
       } catch (e) { loadErrors.push(`Character ${(raw as Character).id}: ${(e as Error).message}`); }
     }
-    const db = new ContentDB(bundledContent(), custom);
-    loadErrors.push(...db.problems);
-    set({ ready: true, store, storageWarning: warning, characters, custom, db, loadErrors });
+    const dbs = buildDbs(custom);
+    loadErrors.push(...new Set([...dbs['dnd5e-2014'].problems, ...dbs['dnd5e-2024'].problems]));
+    set({ ready: true, store, storageWarning: warning, characters, custom, dbs, loadErrors });
     // Flush pending saves before unload
     window.addEventListener('beforeunload', (e) => {
       const pending = Object.values(get().saves).some((s) => s.status === 'pending' || s.status === 'saving');
@@ -159,13 +168,13 @@ export const useApp = create<AppState>((set, get) => ({
     const full = { createdAt: existing?.createdAt ?? now, ...rec, updatedAt: now } as CustomContentRecord;
     await get().store!.putContent(full);
     const custom = [...get().custom.filter((r) => !(r.kind === rec.kind && r.id === rec.id)), full];
-    set({ custom, db: new ContentDB(bundledContent(), custom) });
+    set({ custom, dbs: buildDbs(custom) });
   },
 
   async deleteCustom(kind, id) {
     await get().store!.deleteContent(kind, id);
     const custom = get().custom.filter((r) => !(r.kind === kind && r.id === id));
-    set({ custom, db: new ContentDB(bundledContent(), custom) });
+    set({ custom, dbs: buildDbs(custom) });
   },
 
   addRoll(r) {

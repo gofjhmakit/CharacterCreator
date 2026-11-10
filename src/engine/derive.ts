@@ -16,6 +16,7 @@ import { safeFormula, type FormulaVars } from './formula';
 import { CONDITION_MODIFIERS, IMPLIED_CONDITIONS, exhaustionModifiers } from './conditions';
 import { computeSpellSlots, maxSpellLevelForClass, pactMagic } from './spellSlots';
 import { averageOfDie } from '@/dice/dice';
+import { rulesFor, stepValue, type RulesProfile } from './rules';
 
 // ---------------------------------------------------------------------------
 // Output types
@@ -79,6 +80,8 @@ export interface ResourceView {
   pool: boolean;
   source: SourceRef;
   overridden: boolean;
+  /** Uses regained on a short rest for long-rest resources (2024). */
+  shortRecover?: number;
 }
 
 export interface CasterView {
@@ -115,11 +118,14 @@ export interface SpellView {
   dc?: number;
   attack?: number;
   uses?: { max: number; used: number; recharge: string; resourceId: string };
+  /** Item-granted spell that spends item charges. */
+  charges?: { itemInstanceId: string; cost: number; remaining: number; max: number };
   countsAgainstLimit: boolean;
 }
 
 export interface Rider {
   label: string;
+  target?: 'target' | 'self';
   trigger: Effect['trigger'];
   text: string;
   dc?: number;
@@ -144,6 +150,8 @@ export interface AttackView {
   damageType: DamageType | string;
   versatileDice?: string;
   extraDamage: { dice: string; type: string; label: string; condition?: string }[];
+  /** 2024 Weapon Mastery property the character can use with this weapon. */
+  mastery?: { id: string; name: string; description: string };
   range: string;
   properties: string[];
   critRange: number;
@@ -209,6 +217,11 @@ export interface Derived {
   formulaVars: FormulaVars;
   /** Formula variables with `cl` bound to the given class's level. */
   varsFor: (classId?: string) => FormulaVars;
+  rules: RulesProfile;
+  /** Base weapon ids the character has Weapon Mastery with (2024). */
+  masteries: string[];
+  /** Active non-attack triggered effects (on heal, on revive, when damaged, start of turn…), as play reminders. */
+  triggers: Rider[];
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +249,7 @@ const ARMOR_PROF_LABEL: Record<string, string> = { light: 'Light armor', medium:
 export function derive(ch: Character, db: ContentDB): Derived {
   const warnings: string[] = [];
   const flags = new Set<string>();
+  const rules = rulesFor(ch.ruleset);
   const race = db.races.get(ch.race.raceId);
   const subrace = race?.subraces?.find((s) => s.id === ch.race.subraceId);
   const background = db.backgrounds.get(ch.background.backgroundId);
@@ -260,9 +274,11 @@ export function derive(ch: Character, db: ContentDB): Derived {
   const effectsList: { e: Effect; source: SourceRef; item?: InventoryItem; ownerClass?: string; toggleKey: string }[] = [];
   const resourceDefs: { def: ResourceDef; source: SourceRef; ownerClass?: string }[] = [];
   const abilityBonusParts: Record<Ability, Part[]> = { str: [], dex: [], con: [], int: [], wis: [], cha: [] };
+  const abilityMaxRaise: Partial<Record<Ability, number>> = {};
   const featsTaken: { feat: FeatDef; key: string; source: SourceRef }[] = [];
 
-  const choiceSel = (key: string) => ch.choices[key] ?? [];
+  const presetSel: Record<string, string[]> = {};
+  const choiceSel = (key: string) => ch.choices[key]?.length ? ch.choices[key] : presetSel[key] ?? [];
   const allChoices: ChoiceView[] = [];
 
   // Pre-vars for evaluating choice counts (abilities not yet known → base-based approximation)
@@ -275,7 +291,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   function optionsFor(c: ChoiceDef): ChoiceOption[] {
     if (c.options) return c.options;
     if (c.pool) return db.pools.get(c.pool)?.options ?? [];
-    if (c.kind === 'feat') return [...db.feats.values()].map((f) => ({ id: f.id, name: f.name, description: f.description }));
+    if (c.kind === 'feat') return [...db.feats.values()].filter((f) => !c.featCategories?.length || (f.category && c.featCategories.includes(f.category))).map((f) => ({ id: f.id, name: f.name, description: f.description }));
     return [];
   }
 
@@ -296,11 +312,25 @@ export function derive(ch: Character, db: ContentDB): Derived {
         case 'tool': grantsList.push({ g: { tools: picked }, source, ownerClass, minLevelCtx: 0 }); break;
         case 'damage-type': grantsList.push({ g: { resistances: picked as DamageType[] }, source, ownerClass, minLevelCtx: 0 }); break;
         case 'ability':
-          for (const a of picked) if ((ABILITIES as readonly string[]).includes(a)) abilityBonusParts[a as Ability].push({ label: source.label, value: c.amount ?? 1, source });
+          for (const a of picked) if ((ABILITIES as readonly string[]).includes(a)) {
+            abilityBonusParts[a as Ability].push({ label: source.label, value: c.amount ?? 1, source });
+            if (c.abilityMax) abilityMaxRaise[a as Ability] = Math.max(abilityMaxRaise[a as Ability] ?? 20, c.abilityMax);
+          }
           break;
-        case 'spell':
-          grantsList.push({ g: { spells: picked.map((spellId) => ({ spellId, mode: c.spellMode ?? 'known' })) }, source, ownerClass, minLevelCtx: 0 });
+        case 'ability-split': {
+          const seen: Record<string, number> = {};
+          for (const a of sel.slice(0, 3)) {
+            if (!(ABILITIES as readonly string[]).includes(a) || (c.from?.length && !c.from.includes(a))) continue;
+            if ((seen[a] = (seen[a] ?? 0) + 1) > 2) continue;
+            abilityBonusParts[a as Ability].push({ label: source.label, value: 1, source });
+          }
           break;
+        }
+        case 'spell': {
+          const cast = castAbilityOf(choiceSel(`${prefix}:ability`));
+          grantsList.push({ g: { spells: picked.map((spellId) => ({ spellId, mode: c.spellMode ?? 'known', ...(cast ? { ability: cast } : {}), ...(c.spellMode === 'innate' ? { uses: { max: 1, recharge: 'long' as const } } : {}) })) }, source, ownerClass, minLevelCtx: 0 });
+          break;
+        }
         case 'asi': {
           // values: ability ids (each +1) or "feat:<id>"
           const featPick = picked.find((p) => p.startsWith('feat:'));
@@ -348,14 +378,15 @@ export function derive(ch: Character, db: ContentDB): Derived {
     addChoices(f.choices, key, { ...source, label: f.name }, ownerClass, af);
   }
 
-  function addFeat(feat: FeatDef, key: string, via: SourceRef) {
+  function addFeat(feat: FeatDef, key: string, via: SourceRef, presets?: Record<string, string[]>) {
+    if (presets) for (const [k, v] of Object.entries(presets)) if (!ch.choices[`${key}:${feat.id}:${k}`]?.length) presetSel[`${key}:${feat.id}:${k}`] = v;
     const source: SourceRef = { kind: 'feat', id: feat.id, label: feat.name };
     featsTaken.push({ feat, key, source });
     const def: FeatureDef = {
       id: feat.id, name: feat.name, description: feat.description, source: feat.source, grants: feat.grants,
       effects: feat.effects, resource: feat.resource, prerequisite: feat.prerequisite,
       choices: [
-        ...(feat.abilityIncrease ? [{ id: 'ability', label: 'Ability increase', kind: 'ability' as const, count: 1, amount: feat.abilityIncrease.amount, from: feat.abilityIncrease.from }] : []),
+        ...(feat.abilityIncrease ? [{ id: 'ability', label: 'Ability increase', kind: 'ability' as const, count: 1, amount: feat.abilityIncrease.amount, from: feat.abilityIncrease.from, abilityMax: feat.abilityIncrease.max }] : []),
         ...(feat.choices ?? []),
       ],
       tags: ['feat', `via:${via.label}`],
@@ -396,8 +427,21 @@ export function derive(ch: Character, db: ContentDB): Derived {
   if (background) {
     const src: SourceRef = { kind: 'background', id: background.id, label: background.name };
     grantsList.push({ g: background.grants, source: src, minLevelCtx: 0 });
+    if (rules.originAsi === 'background' && background.abilityOptions?.length) {
+      addChoices([{ id: 'asi', label: `Ability scores (${background.abilityOptions.map((a) => a.toUpperCase()).join(', ')}): +2/+1 or +1/+1/+1`, kind: 'ability-split', count: 3, from: background.abilityOptions }], 'background', src, undefined, null);
+    }
     addChoices(background.choices, 'background', src, undefined, null);
-    addFeature(background.feature, 'background', src);
+    if (background.feature.name) addFeature(background.feature, 'background', src);
+    if (background.originFeat) {
+      const feat = db.feats.get(background.originFeat.id);
+      if (feat) addFeat(feat, 'background:origin-feat', { ...src, label: `${background.name} (origin feat)` }, background.originFeat.presetChoices);
+      else warnings.push(`Origin feat "${background.originFeat.id}" not found.`);
+    }
+  }
+  if (rules.originLanguages) {
+    const src: SourceRef = { kind: 'background', id: 'origin', label: 'Languages' };
+    grantsList.push({ g: { languages: rules.originLanguages.granted }, source: src, minLevelCtx: 0 });
+    addChoices([{ id: 'languages', label: `Languages (${rules.originLanguages.granted.join(', ')} + ${rules.originLanguages.choose} of your choice)`, kind: 'language', count: rules.originLanguages.choose }], 'origin', src, undefined, null);
   }
 
   // Classes
@@ -420,7 +464,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
       if (!ch.settings.optional.feats) {
         // feats disabled → ASI only; still uses the same choice key
       }
-      addChoices([{ id: `asi-${asiLvl}`, label: `Ability Score Improvement (${def.name} ${asiLvl})`, kind: 'asi', count: 2 }], `class:${def.id}`, { ...src, label: `${def.name} ${asiLvl}` }, def.id,
+      addChoices([{ id: `asi-${asiLvl}`, label: `Ability Score Improvement (${def.name} ${asiLvl})`, kind: 'asi', count: 2, featCategories: rules.asiFeatCategories }], `class:${def.id}`, { ...src, label: `${def.name} ${asiLvl}` }, def.id,
         (() => { const af: ActiveFeature = { key: `class:${def.id}:asi-${asiLvl}`, def: { id: `asi-${asiLvl}`, name: `Ability Score Improvement`, description: 'Increase one ability score by 2, or two ability scores by 1 (max 20), or take a feat if your table allows feats.', level: asiLvl, tags: ['asi'] }, source: src, level: asiLvl, classId: def.id, choices: [] }; features.push(af); return af; })());
     }
     if (subclass && level >= def.subclassLevel) {
@@ -464,6 +508,16 @@ export function derive(ch: Character, db: ContentDB): Derived {
     }
   }
 
+  // Spells granted by items (active under the same rules as an item's effects).
+  const itemSpells: { it: InventoryItem; sp: NonNullable<ItemDefinition['spells']>[number] }[] = [];
+  for (const it of inv) {
+    if (!it.item.spells?.length) continue;
+    const act: Effect = { id: 'item-spells', activation: it.item.attunement?.required ? 'attuned' : 'equipped' };
+    const handheld = ['wand', 'staff', 'rod', 'scroll'].includes(it.item.category);
+    if (!(itemEffectActive(act, it) || (handheld && !it.item.attunement?.required))) continue;
+    for (const sp of it.item.spells) itemSpells.push({ it, sp });
+  }
+
   // Temp effects
   for (const t of ch.effects) {
     effectsList.push({ e: { ...t.effect, activation: 'always' }, source: { kind: 'temp', id: t.id, label: t.name }, toggleKey: t.id });
@@ -497,6 +551,8 @@ export function derive(ch: Character, db: ContentDB): Derived {
     if (!cur || range > cur.range) senses[name] = { range, source };
   };
 
+  // Species/lineage spellcasting ability (2024 lineages and legacies let you choose INT, WIS, or CHA).
+  const originCast = castAbilityOf(Object.entries(ch.choices).filter(([k]) => k.startsWith('race:') || k.startsWith('subrace:')).flatMap(([, v]) => v));
   for (const { g, source, ownerClass } of grantsList) {
     const label = source.label;
     for (const s of g.skills ?? []) addSkillProf(s, 1, label);
@@ -514,7 +570,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
     for (const sp of g.spells ?? []) {
       const ownerLevel = ownerClass ? classLevel(ownerClass) : totalLevel;
       if (sp.minLevel && ownerLevel < sp.minLevel) continue;
-      grantedSpells.push({ spellId: sp.spellId, mode: sp.mode, source, ownerClass, ability: sp.ability, minLevel: sp.minLevel, uses: sp.uses ? { max: Math.max(0, Math.floor(safeFormula(sp.uses.max, preVars(ownerClass), 1))), recharge: sp.uses.recharge } : undefined });
+      grantedSpells.push({ spellId: sp.spellId, mode: sp.mode, source, ownerClass, ability: sp.ability ?? ((source.kind === 'race' || source.kind === 'subrace') ? originCast : undefined), minLevel: sp.minLevel, uses: sp.uses ? { max: Math.max(0, Math.floor(safeFormula(sp.uses.max, preVars(ownerClass), 1))), recharge: sp.uses.recharge } : undefined });
     }
   }
   // Custom (manual) proficiencies
@@ -576,7 +632,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   }
   const condSource = (c: string): SourceRef => ({ kind: 'condition', id: c, label: c[0].toUpperCase() + c.slice(1) });
   for (const c of activeConditions) for (const m of CONDITION_MODIFIERS[c] ?? []) mods.push({ mod: m, source: condSource(c), effectId: `cond-${c}`, effectName: c, vars: {} });
-  for (const m of exhaustionModifiers(ch.combat.exhaustion)) mods.push({ mod: m, source: { kind: 'condition', id: 'exhaustion', label: `Exhaustion ${ch.combat.exhaustion}` }, effectId: 'exhaustion', effectName: 'Exhaustion', vars: {} });
+  for (const m of exhaustionModifiers(ch.combat.exhaustion, rules.exhaustion)) mods.push({ mod: m, source: { kind: 'condition', id: 'exhaustion', label: `Exhaustion ${ch.combat.exhaustion}` }, effectId: 'exhaustion', effectName: 'Exhaustion', vars: {} });
 
   // Armor proficiency penalties
   const armorProf = (cat: string) => profSets.armor.has(cat) || (cat === 'shield' && profSets.armor.has('shields'));
@@ -618,7 +674,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   const baseVars = varsFor();
   for (const a of ABILITIES) {
     const base = ch.abilities.base[a];
-    let max = 20;
+    let max = Math.max(20, abilityMaxRaise[a] ?? 20);
     for (const m of mods) if (m.mod.target === `ability-max:${a}` && !m.mod.condition) max = Math.max(max, modValue(m, baseVars) || max);
     const parts: Part[] = [{ label: 'Base score', value: base }, ...abilityBonusParts[a]];
     for (const m of mods) {
@@ -769,7 +825,8 @@ export function derive(ch: Character, db: ContentDB): Derived {
   } else if (ch.settings.encumbrance === 'standard' && carryingPre.status === 'over-capacity') {
     walkParts.push({ label: 'Over carrying capacity (max 5 ft unless pushing/dragging)', value: 5 - walk }); walk = 5;
   }
-  if (ch.combat.exhaustion >= 2) { const h = Math.floor(walk / 2); walkParts.push({ label: 'Exhaustion (speed halved)', value: h - walk }); walk = h; }
+  if (rules.exhaustion === '2014' && ch.combat.exhaustion >= 2) { const h = Math.floor(walk / 2); walkParts.push({ label: 'Exhaustion (speed halved)', value: h - walk }); walk = h; }
+  if (rules.exhaustion === '2024' && ch.combat.exhaustion > 0) { const r = 5 * ch.combat.exhaustion; walkParts.push({ label: `Exhaustion (−5 ft × ${ch.combat.exhaustion})`, value: -r }); walk -= r; }
   const zeroSet = mods.find((m) => m.mod.target === 'speed:all' && m.mod.op === 'set' && !m.mod.condition);
   speed.walk = { value: Math.max(0, walk), parts: walkParts };
   for (const mode of ['fly', 'swim', 'climb', 'burrow'] as MovementMode[]) {
@@ -787,7 +844,8 @@ export function derive(ch: Character, db: ContentDB): Derived {
       if (op === 'max' && mv > v) { parts.push({ label: m.effectName, value: mv - v, source: m.source }); v = mv; }
       if (op === 'set') { parts.push({ label: m.effectName, value: mv - v, source: m.source }); v = mv; }
     }
-    if (ch.combat.exhaustion >= 2 && v > 0) { const h = Math.floor(v / 2); parts.push({ label: 'Exhaustion', value: h - v }); v = h; }
+    if (rules.exhaustion === '2014' && ch.combat.exhaustion >= 2 && v > 0) { const h = Math.floor(v / 2); parts.push({ label: 'Exhaustion', value: h - v }); v = h; }
+    if (rules.exhaustion === '2024' && ch.combat.exhaustion > 0 && v > 0) { const r = 5 * ch.combat.exhaustion; parts.push({ label: 'Exhaustion', value: -r }); v -= r; }
     speed[mode] = { value: Math.max(0, v), parts };
   }
   if (zeroSet) for (const mode of Object.keys(speed) as MovementMode[]) if (speed[mode].value > 0) { speed[mode].parts.push({ label: zeroSet.effectName, value: -speed[mode].value, source: zeroSet.source }); speed[mode].value = 0; }
@@ -815,7 +873,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
     if (m.mod.target === 'hp-per-level') { const v = modValue(m, vars(ownerOf(m))); const lv = ownerOf(m) ? classLevel(ownerOf(m)!) : totalLevel; hpParts.push({ label: `${m.effectName} (${v} × ${lv} levels)`, value: v * lv, source: m.source }); hpMax += v * lv; }
     if (m.mod.target === 'hp-max') { const v = modValue(m, vars(ownerOf(m))); hpParts.push({ label: m.effectName, value: v, source: m.source }); hpMax += v; }
   }
-  if (ch.combat.exhaustion >= 4) { const h = Math.floor(hpMax / 2); hpParts.push({ label: 'Exhaustion 4+ (halved)', value: h - hpMax }); hpMax = h; }
+  if (rules.exhaustion === '2014' && ch.combat.exhaustion >= 4) { const h = Math.floor(hpMax / 2); hpParts.push({ label: 'Exhaustion 4+ (halved)', value: h - hpMax }); hpMax = h; }
   if (ch.combat.hpMaxReduction) { hpParts.push({ label: 'Maximum HP reduction', value: -ch.combat.hpMaxReduction }); hpMax -= ch.combat.hpMaxReduction; }
   hpMax = Math.max(1, hpMax);
   const hpOverride = ch.settings.overrides.maxHp;
@@ -861,7 +919,8 @@ export function derive(ch: Character, db: ContentDB): Derived {
     if (overridden) max = st!.maxOverride!;
     const used = Math.min(max, Math.max(0, st?.used ?? 0));
     const die = def.die === undefined ? undefined : typeof def.die === 'number' ? `d${def.die}` : /^[a-z_(]/i.test(def.die) && !/^d\d/.test(def.die) ? `d${safeFormula(def.die, rv, 0)}` : def.die;
-    resources.push({ id: def.id, name: def.name, max, used, remaining: max - used, recharge: def.recharge, die, pool: !!def.pool, source, overridden });
+    const shortRecover = def.shortRestRecover !== undefined ? Math.max(0, Math.floor(safeFormula(def.shortRestRecover, rv, 0))) : undefined;
+    resources.push({ id: def.id, name: def.name, max, used, remaining: max - used, recharge: def.recharge, die, pool: !!def.pool, source, overridden, ...(shortRecover ? { shortRecover } : {}) });
   }
 
   // ------------------------------------------------------------------ spellcasting
@@ -956,6 +1015,25 @@ export function derive(ch: Character, db: ContentDB): Derived {
     });
     if (g.uses && g.uses.max > 0) resources.push({ id: resId, name: `${spell?.name ?? g.spellId} (${g.source.label})`, max: g.uses.max, used: usedRes, remaining: g.uses.max - usedRes, recharge: g.uses.recharge as ResourceDef['recharge'], pool: false, source: g.source, overridden: false });
   }
+  for (const { it, sp } of itemSpells) {
+    const spell = db.spells.get(sp.spellId);
+    const key = `item:${it.id}:${sp.spellId}`;
+    const resId = sp.uses ? `spell-use:item:${it.id}:${sp.spellId}` : '';
+    const used = resId ? Math.min(sp.uses!, ch.resources[resId]?.used ?? 0) : 0;
+    const best = casters.reduce<CasterView | undefined>((b, c) => (!b || c.dc.total > b.dc.total ? c : b), undefined);
+    const chargeMax = it.item.charges?.max ?? 0;
+    spellViews.push({
+      key, spell, spellId: sp.spellId, kind: 'innate', prepared: true, alwaysPrepared: false, inSpellbook: false, granted: true,
+      sourceLabel: `${it.item.name}${sp.note ? ` (${sp.note})` : ''}`, favorite: !!ch.choices[`fav:${key}`]?.length,
+      dc: sp.dc ?? best?.dc.total, attack: sp.attack ?? best?.attack.total,
+      uses: sp.uses ? { max: sp.uses, used, recharge: sp.recharge ?? 'long', resourceId: resId } : undefined,
+      charges: sp.chargeCost ? { itemInstanceId: it.id, cost: sp.chargeCost, remaining: it.charges ?? chargeMax, max: chargeMax } : undefined,
+      countsAgainstLimit: false,
+    });
+    if (sp.uses) resources.push({ id: resId, name: `${spell?.name ?? sp.spellId} (${it.item.name})`, max: sp.uses, used, remaining: sp.uses - used, recharge: (sp.recharge ?? 'long') as ResourceDef['recharge'], pool: false, source: { kind: 'item', id: it.id, label: it.item.name }, overridden: false });
+    if (!spell) warnings.push(`${it.item.name}: spell "${sp.spellId}" not found.`);
+  }
+
   // Limits
   for (const cv of casters) {
     const mine = spellViews.filter((v) => v.classId === cv.classId && v.entry?.source === 'class');
@@ -970,8 +1048,23 @@ export function derive(ch: Character, db: ContentDB): Derived {
     for (const v of leveled) if ((v.spell?.level ?? 0) > cv.maxSpellLevel) warnings.push(`${cv.name}: ${v.spell?.name} is level ${v.spell?.level}, above your maximum (${cv.maxSpellLevel}).`);
   }
 
+  // ------------------------------------------------------------------ weapon mastery (2024)
+  const masteries = rules.weaponMastery ? [...new Set(allChoices.filter((c) => c.def.pool === 'weapon-mastery').flatMap((c) => c.selected.slice(0, c.count)).map((x) => x.replace(/^wm-/, '')))] : [];
+
   // ------------------------------------------------------------------ attacks
-  const attacks = computeAttacks({ ch, abilities, profBonus, profSets, mods, meets, modValue: (m) => modValue(m, vars(ownerOf(m))), flags, effects: activeEffects, casters, equippedWeapons, V, classLevel, toggleOn, db, varsFor: vars });
+  const attacks = computeAttacks({ rules, masteries, ch, abilities, profBonus, profSets, mods, meets, modValue: (m) => modValue(m, vars(ownerOf(m))), flags, effects: activeEffects, casters, equippedWeapons, V, classLevel, toggleOn, db, varsFor: vars });
+
+  // ------------------------------------------------------------------ non-attack triggers (reminders)
+  const ATTACK_TRIGGERS = new Set(['on-hit', 'on-crit', 'on-attack', 'passive', 'on-use']);
+  const triggers: Rider[] = [];
+  for (const x of activeEffects) {
+    const e = x.e;
+    if (!e.trigger || ATTACK_TRIGGERS.has(e.trigger)) continue;
+    const vv = vars(x.ownerClass);
+    let dc: number | undefined;
+    if (e.save) dc = e.save.dc.kind === 'fixed' ? e.save.dc.value : e.save.dc.kind === 'spell' ? casters.find((c) => c.classId === (e.save!.dc as { classId?: string }).classId)?.dc.total ?? casters[0]?.dc.total : Math.floor(safeFormula(e.save.dc.formula, vv, 10));
+    triggers.push({ label: e.name ?? x.source.label, trigger: e.trigger, target: e.target, text: e.description ? expandTemplate(e.description, vv) : describeOutcomes(e, dc, db), dc, saveAbility: e.save?.ability, outcomes: e.save ? e.save.onFailure : e.outcomes, onSuccess: e.save?.onSuccess, oncePerTurn: e.oncePerTurn, source: x.source, usesResource: e.consumes?.resourceId ?? e.uses?.resourceId });
+  }
 
   // ------------------------------------------------------------------ attunement & warnings
   let attLimit = ch.settings.attunementLimit ?? 3;
@@ -1028,12 +1121,20 @@ export function derive(ch: Character, db: ContentDB): Derived {
     armorWorn, shieldWorn, flags,
     formulaVars: V,
     varsFor: vars,
+    rules,
+    masteries,
+    triggers,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function castAbilityOf(values: string[]): Ability | undefined {
+  const v = values.find((x) => /^cast-(int|wis|cha)$/.test(x));
+  return v ? (v.slice(5) as Ability) : undefined;
+}
 
 function dedupeBy<T>(arr: T[], key: (t: T) => string): T[] {
   const seen = new Set<string>();
@@ -1199,6 +1300,8 @@ interface AttackCtx {
   toggleOn: (key: string, e: Effect, item?: InventoryItem) => boolean;
   db: ContentDB;
   varsFor: (ownerClass?: string) => FormulaVars;
+  rules: RulesProfile;
+  masteries: string[];
 }
 
 /** Expand "{formula}" templates inside dice strings/text, e.g. "{ceil(cl/2)}d6" → "3d6". */
@@ -1208,9 +1311,24 @@ export function expandTemplate(str: string, vars: FormulaVars): string {
 const expandOutcomes = (os: Outcome[] | undefined, vars: FormulaVars): Outcome[] | undefined =>
   os?.map((o) => ({ ...o, ...(o.dice ? { dice: expandTemplate(o.dice, vars) } : {}), ...(o.text ? { text: expandTemplate(o.text, vars) } : {}) }));
 
+/** Short Weapon Mastery summaries (full SRD 5.2 text is shown from content where available). */
+export const MASTERY_TEXT: Record<string, string> = {
+  cleave: 'On a melee hit, make one extra attack against a second creature within 5 ft of the first (no ability modifier to damage unless negative). Once per turn.',
+  graze: 'On a miss, deal damage equal to the ability modifier used for the attack (same damage type).',
+  nick: 'The extra attack from the Light property can be made as part of the Attack action instead of a Bonus Action (once per turn).',
+  push: 'On a hit, push a Large or smaller creature up to 10 ft straight away from you.',
+  sap: 'On a hit, the target has Disadvantage on its next attack roll before the start of your next turn.',
+  slow: 'On a hit that deals damage, reduce the target\'s Speed by 10 ft until the start of your next turn (doesn\'t stack).',
+  topple: 'On a hit, the target makes a CON save (DC 8 + ability modifier + proficiency) or has the Prone condition.',
+  vex: 'On a hit that deals damage, you have Advantage on your next attack roll against that creature before the end of your next turn.',
+};
+
 export function weaponProficient(w: ItemDefinition, profs: Map<string, string[]>): boolean {
   if (!w.weapon) return false;
   if (profs.has(w.weapon.category)) return true;
+  const props = w.weapon.properties as string[];
+  if (w.weapon.category === 'martial' && profs.has('martial-light') && props.includes('light')) return true;
+  if (w.weapon.category === 'martial' && profs.has('martial-finesse-light') && (props.includes('light') || props.includes('finesse'))) return true;
   const base = w.weapon.baseWeapon ?? w.id;
   const names = [base, w.name.toLowerCase(), base.replace(/-/g, ' ')];
   for (const p of profs.keys()) {
@@ -1224,7 +1342,7 @@ function computeAttacks(c: AttackCtx): AttackView[] {
   const out: AttackView[] = [];
   const { abilities, profBonus } = c;
   const monkLevel = c.classLevel('monk');
-  const martialArtsDie = monkLevel ? (monkLevel >= 17 ? 10 : monkLevel >= 11 ? 8 : monkLevel >= 5 ? 6 : 4) : 0;
+  const martialArtsDie = monkLevel ? stepValue(c.rules.martialArts, monkLevel) : 0;
   const critRangeMods = c.mods.filter((m) => m.mod.target === 'crit-range' && !m.mod.condition);
   const globalCrit = critRangeMods.reduce((lo, m) => Math.min(lo, c.modValue(m) || 20), 20);
   const weapons = c.equippedWeapons;
@@ -1260,7 +1378,9 @@ function computeAttacks(c: AttackCtx): AttackView[] {
     const kind = w?.kind ?? 'melee';
     const props = w?.properties ?? [];
     const thrown = props.includes('thrown');
-    const monkWeapon = monkLevel > 0 && (isUnarmed || (w && ((w.category === 'simple' && kind === 'melee' && !props.includes('two-handed') && !props.includes('heavy')) || w.baseWeapon === 'shortsword')));
+    const monkWeapon = monkLevel > 0 && (isUnarmed || (w && (c.rules.monkWeapons === '2024'
+      ? kind === 'melee' && (w.category === 'simple' || props.includes('light'))
+      : (w.category === 'simple' && kind === 'melee' && !props.includes('two-handed') && !props.includes('heavy')) || w.baseWeapon === 'shortsword')));
     let ability: Ability;
     if (w?.ability && w.ability !== 'auto') ability = w.ability;
     else if (kind === 'ranged') ability = 'dex';
@@ -1315,6 +1435,7 @@ function computeAttacks(c: AttackCtx): AttackView[] {
     if (props.includes('heavy') && /small|tiny/.test(c.ch.identity.size ?? '')) notes.push('Heavy: Small creatures have disadvantage.');
     if (offhand) notes.push('Off-hand attack (bonus action, Two-Weapon Fighting rules).');
     const crit = Math.min(globalCrit, w?.critRange ?? 20);
+    const mastery = w?.mastery && c.masteries.includes(w.baseWeapon ?? def!.id) ? { id: w.mastery, name: w.mastery[0].toUpperCase() + w.mastery.slice(1), description: MASTERY_TEXT[w.mastery] ?? '' } : undefined;
     return {
       id: it ? `${it.id}${offhand ? ':off' : ''}` : 'unarmed',
       name: isUnarmed ? (monkLevel ? 'Unarmed Strike (Martial Arts)' : 'Unarmed Strike') : `${def!.name}${offhand ? ' (off-hand)' : ''}`,
@@ -1327,6 +1448,7 @@ function computeAttacks(c: AttackCtx): AttackView[] {
       range,
       properties: props,
       critRange: crit,
+      mastery,
       riders: ridersFromEffects(scopeTags, it),
       notes,
     };
@@ -1346,7 +1468,7 @@ export function dieSize(dice: string): number {
   return m ? Number(m[1]) : 0;
 }
 
-export function describeOutcomes(e: Effect, dcValue?: number): string {
+export function describeOutcomes(e: Effect, dcValue?: number, db?: ContentDB): string {
   const parts: string[] = [];
   const fmt = (o: Outcome) => {
     switch (o.kind) {
@@ -1360,6 +1482,7 @@ export function describeOutcomes(e: Effect, dcValue?: number): string {
       case 'penalty': return `−${o.amount ?? o.dice ?? ''} ${o.text ?? ''}`.trim();
       case 'resource-restore': return `restore ${o.amount ?? 1} ${o.resourceId ?? ''}`;
       case 'resource-consume': return `spend ${o.amount ?? 1} ${o.resourceId ?? ''}`;
+      case 'spell-effect': return `${e.target === 'self' ? 'you gain' : 'apply'} the effect of ${db?.spells.get(o.spellId ?? '')?.name ?? (o.spellId ?? 'a spell').replace(/-/g, ' ')}${e.target === 'self' ? '' : ' to the creature'}${o.duration ? ` (${o.duration})` : ''}`;
       default: return o.text ?? '';
     }
   };
@@ -1369,6 +1492,8 @@ export function describeOutcomes(e: Effect, dcValue?: number): string {
     if (e.save.onSuccess?.length) parts.push(`on success: ${e.save.onSuccess.map(fmt).join(', ')}`);
   }
   if (e.outcomes?.length) parts.push(e.outcomes.map(fmt).join(', '));
+  const lead = e.trigger === 'on-heal' ? 'When you heal a creature: ' : e.trigger === 'on-revive' ? 'When you revive a creature: ' : '';
+  if (lead && parts.length) parts[0] = lead + parts[0];
   if (e.oncePerTurn) parts.push('once per turn');
   return parts.join('; ');
 }

@@ -1,0 +1,14 @@
+// Non-SRD spells referenced by 2024 subclasses (brief original summaries; see PHB 2024 for full text).
+import type { SpellDef } from '@/types/content';
+const S = (s: Omit<SpellDef, 'source' | 'tags' | 'components'> & { c: string }): SpellDef => {
+  const { c, ...r } = s;
+  return { ...r, components: { v: c.includes('V'), s: c.includes('S'), m: c.includes('M') }, source: { book: 'PHB 2024', kind: 'summary' }, tags: [] };
+};
+export const EXTRA_SPELLS_2024: SpellDef[] = [
+  S({ id: 'steel-wind-strike', name: 'Steel Wind Strike', level: 5, school: 'conjuration', castingTime: 'Action', range: '30 feet', c: 'SM', duration: 'Instantaneous', concentration: false, ritual: false, attack: 'melee', damageTypes: ['force'], damage: { bySlot: { '5': '6d10' } }, classes: ['ranger', 'wizard'], description: 'Melee spell attacks against up to five creatures within range (6d10 force each), then teleport next to one of them.' }),
+  S({ id: 'yolandes-regal-presence', name: "Yolande's Regal Presence", level: 5, school: 'enchantment', castingTime: 'Action', range: 'Self', c: 'VSM', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, save: 'wis', damageTypes: ['psychic'], classes: ['bard', 'wizard'], description: 'A 10-ft aura of majesty: creatures entering or starting there make a WIS save or take 4d6 psychic damage and are pushed or knocked Prone.' }),
+  S({ id: 'fount-of-moonlight', name: 'Fount of Moonlight', level: 4, school: 'evocation', castingTime: 'Action', range: 'Self', c: 'VS', duration: 'Concentration, up to 10 minutes', concentration: true, ritual: false, damageTypes: ['radiant'], classes: ['bard', 'druid'], description: 'Resistance to radiant damage; your melee attacks deal +2d6 radiant; reaction to blind an attacker (CON save).' }),
+  S({ id: 'summon-celestial', name: 'Summon Celestial', level: 5, school: 'conjuration', castingTime: 'Action', range: '90 feet', c: 'VSM', duration: 'Concentration, up to 1 hour', concentration: true, ritual: false, classes: ['cleric', 'paladin'], description: 'Summon a celestial spirit (Avenger or Defender) whose statistics scale with the slot level.' }),
+  S({ id: 'dragons-breath', name: "Dragon's Breath", level: 2, school: 'transmutation', castingTime: 'Bonus Action', range: 'Touch', c: 'VSM', duration: 'Concentration, up to 1 minute', concentration: true, ritual: false, save: 'dex', classes: ['sorcerer', 'wizard'], description: 'A willing creature can exhale a 15-ft cone (3d6 of a chosen element, DEX save for half) as a Magic action.' }),
+  S({ id: 'charm-monster', name: 'Charm Monster', level: 4, school: 'enchantment', castingTime: 'Action', range: '30 feet', c: 'VS', duration: '1 hour', concentration: false, ritual: false, save: 'wis', classes: ['bard', 'druid', 'sorcerer', 'warlock', 'wizard'], description: 'One creature makes a WIS save (with Advantage if you or allies are fighting it) or is Charmed by you.' }),
+];

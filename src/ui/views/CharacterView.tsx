@@ -1,3 +1,4 @@
+import { RulesetProvider } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import { useApp, useCharacter } from '@/state/store';
 import { derive } from '@/engine/derive';
@@ -32,7 +33,7 @@ export function SaveIndicator({ id }: { id: string }) {
 
 export function CharacterView({ id, tab }: { id: string; tab: string }) {
   const ch = useCharacter(id);
-  const db = useApp((s) => s.db);
+  const db = useApp((s) => s.dbs[ch?.ruleset ?? 'dnd5e-2014']);
   const update = useApp((s) => s.update);
   const replaceC = useApp((s) => s.replace);
   const [more, setMore] = useState(false);
@@ -63,13 +64,14 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
   const mobile: [string, string, () => React.ReactElement][] = [['overview', 'Play', IconHeart], ['abilities', 'Skills', IconStar], ['spells', 'Spells', IconBook], ['inventory', 'Items', IconBag]];
 
   return (
+    <RulesetProvider value={ch.ruleset}>
     <div>
       {saveState?.status === 'error' && <div className="notice error" style={{ marginBottom: 10 }}><b>Changes are not being saved.</b> {saveState.error} Export this character to keep a copy.</div>}
       <div className="char-head">
         <Portrait c={ch} />
         <div className="char-title">
           <h1>{ch.identity.name || 'Unnamed'}</h1>
-          <div className="char-sub">Level {d.totalLevel} · {d.classLine} · {sub?.name ?? race?.name ?? 'No race'}{ch.ruleset !== 'dnd5e-2014' ? ` · ${ch.ruleset}` : ''}</div>
+          <div className="char-sub">Level {d.totalLevel} · {d.classLine} · {sub?.name ?? race?.name ?? `No ${d.rules.terms.race.toLowerCase()}`} · <span className={`chip ${ch.ruleset === 'dnd5e-2024' ? 'blue' : ''}`} title="Ruleset">{ch.ruleset === 'dnd5e-2024' ? '2024 rules' : '2014 rules'}</span></div>
         </div>
         <div className="head-actions row" style={{ justifyContent: 'flex-end' }}>
           <SaveIndicator id={id} />
@@ -94,6 +96,7 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
         </Modal>
       )}
     </div>
+    </RulesetProvider>
   );
 }
 
