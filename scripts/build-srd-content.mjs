@@ -275,6 +275,8 @@ for (const m of magic) {
         if (!/^(plate|half plate|studded leather|leather|padded|scale mail|chain mail|chain shirt|breastplate|hide|ring mail|splint)$/.test(spec)) it.notes = `Base armor assumed: ${base.name}. Edit the item to choose a different base.`;
       }
       if (m.index === 'mithral-armor' && it.armor) { delete it.armor.strRequirement; delete it.armor.stealthDisadvantage; }
+    } else if (/arrow|bolt|bullet|needle|ammunition/.test(spec)) {
+      it.category = 'ammunition'; // e.g. Arrow of Slaying: ammunition, not a weapon of its own
     } else {
       const baseId = spec in WEAPON_ALIAS ? WEAPON_ALIAS[spec] : (weaponByIndex[spec] ? spec : 'longsword');
       const base = baseId && weaponByIndex[baseId];

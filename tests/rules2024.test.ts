@@ -24,6 +24,14 @@ describe('2024 content integrity', () => {
     expect(db24.backgrounds.size).toBe(16);
     for (const c of db24.classes.values()) expect(db24.subclassesFor(c.id).length, c.id).toBe(4);
     expect(db24.items.get('longsword')?.weapon?.mastery).toBe('sap');
+    // 2014 SRD items without a 2024 counterpart are ported (tagged), renamed ones are not duplicated
+    expect(db24.items.get('mi-belt-of-giant-strength-hill')?.tags).toContain('from-2014');
+    expect(db24.items.get('warhorse')?.category).toBe('mount');
+    expect(db24.items.has('crossbow-bolt')).toBe(false);
+    expect(db24.items.get('mi-glamoured-studded-leather')?.armor?.baseAc).toBe(12);
+    expect([...db24.items.keys()].filter((k) => k.includes('glamoured'))).toHaveLength(1);
+    expect(db24.items.get('arrows-plus-1')?.magical).toBe(true);
+    expect(db24.items.size).toBeGreaterThan(740);
   });
 });
 

@@ -60,7 +60,7 @@ export function ItemRow({ item, onClick, action, extra }: { item: ItemDefinition
   return (
     <div className="list-row clickable" onClick={onClick}>
       <span className="grow">
-        <b>{item.name}</b> {item.magical && <span className="badge magic">{RARITY_LABEL[item.rarity]}</span>} {item.attunement?.required && <span className="badge" title={item.attunement.restriction}>attune</span>} {db.isCustom('item', item.id) && <span className="badge custom">custom</span>}
+        <b>{item.name}</b> {item.magical && <span className="badge magic">{RARITY_LABEL[item.rarity]}</span>} {item.attunement?.required && <span className="badge" title={item.attunement.restriction}>attune</span>} {db.isCustom('item', item.id) && <span className="badge custom">custom</span>} {item.tags?.includes('from-2014') && db.ruleset === 'dnd5e-2024' && <span className="badge" title="2014 SRD item with no 2024 SRD version (2014 wording)">2014</span>}
         <div className="small muted">{ITEM_CATEGORY_LABEL[item.category] ?? item.category}{item.type && item.type !== ITEM_CATEGORY_LABEL[item.category] ? ` · ${item.type}` : ''}{itemSummary(item) ? ` · ${un.text(itemSummary(item))}` : ''}</div>
       </span>
       {extra}

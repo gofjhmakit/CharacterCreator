@@ -155,14 +155,15 @@ for (const m of magic) {
   if (category === 'scroll') it.consumable = { destroyOnUse: true };
   const baseMatch = typeLine.match(/^(Armor|Weapon)\s*\(([^)]+)\)/i);
   if (baseMatch) {
-    const spec = baseMatch[2].toLowerCase().replace(/ armor$/, '').trim();
+    const spec = baseMatch[2].toLowerCase().replace(/ armor$/, '').trim().replace(/\s+/g, '-');
     if (baseMatch[1].toLowerCase() === 'armor') {
-      const id = armorById[spec] ? spec : armorById[`${spec}-armor`] ? `${spec}-armor` : /medium or heavy|any/.test(spec) ? 'chain-mail' : /light/.test(spec) ? 'leather-armor' : undefined;
+      const id = armorById[spec] ? spec : armorById[`${spec}-armor`] ? `${spec}-armor` : /medium-or-heavy|any/.test(spec) ? 'chain-mail' : /light/.test(spec) ? 'leather-armor' : undefined;
       const b = id && armorById[id];
       if (b) { it.armor = structuredClone(b.armor); it.weight = b.weight; it.baseItemId = b.id; it.category = 'armor'; if (!armorById[spec] && !armorById[`${spec}-armor`]) it.notes = `Base armor assumed: ${b.name}. Edit the item to change it.`; }
     } else {
-      const id = weaponById[spec] ? spec : 'longsword';
-      const b = weaponById[id];
+      const id = weaponById[spec] ? spec : /arrow|bolt|bullet|needle|ammunition/.test(spec) ? null : 'longsword';
+      if (id === null) { it.category = 'ammunition'; }
+      const b = id ? weaponById[id] : undefined;
       if (b) { it.weapon = structuredClone(b.weapon); it.weight = b.weight; it.baseItemId = b.id; if (!weaponById[spec]) it.notes = `Base weapon assumed: ${b.name}. Edit the item to change it.`; }
     }
   }
@@ -178,7 +179,61 @@ for (const n of [1, 2, 3]) {
   for (const a of Object.values(armorById)) { const sh = a.category === 'shield'; plus.push({ ...structuredClone(a), id: `${a.id}-plus-${n}`, name: `${a.name}, +${n}`, aliases: [`+${n} ${a.name}`], description: sh ? `While holding this Shield, you have a +${n} bonus to Armor Class in addition to the Shield's normal bonus.` : `You have a +${n} bonus to Armor Class while wearing this armor.`, rarity: sh ? RARITY_FOR.shield[n] : RARITY_FOR.armor[n], magical: true, attunement: { required: false }, armor: { ...structuredClone(a.armor), bonus: n }, baseItemId: a.id, tags: [...a.tags, 'magic'], cost: undefined }); }
 }
 for (const v of plus) delete v.cost;
-write('items.json', [...items, ...magicItems, ...plus]);
+// ----------------------------------------------------------------- port 2014 SRD items missing from 2024
+// Items are largely edition-agnostic. 2014 SRD 5.1 items with no 2024 counterpart are added (text unchanged,
+// tagged "from-2014"); magic weapons/armor are rebased on the 2024 base items so they gain Weapon Mastery.
+// Renamed equivalents are mapped instead of duplicated.
+const RENAMED_2014 = {
+  arrow: 'arrows', 'crossbow-bolt': 'bolts', 'sling-bullet': 'bullets-sling', 'blowgun-needle': 'needles', 'clothes-costume': 'costume',
+  'dice-set': 'dice', 'playing-card-set': 'playing-cards', robes: 'robe', 'flask-or-tankard': 'flask', 'jug-or-pitcher': 'jug', 'mirror-steel': 'mirror',
+  'rope-hempen-50-feet': 'rope', 'rope-silk-50-feet': 'rope', 'tent-two-person': 'tent', 'spike-iron': 'spikes-iron', 'ink-1-ounce-bottle': 'ink',
+  'oil-flask': 'oil', 'rations-1-day': 'rations', 'crossbow-light': 'light-crossbow', 'crossbow-heavy': 'heavy-crossbow', 'crossbow-hand': 'hand-crossbow',
+  'paper-one-sheet': 'paper', 'parchment-one-sheet': 'parchment', 'alchemists-fire-flask': 'alchemists-fire', 'acid-vial': 'acid', 'antitoxin-vial': 'antitoxin',
+  'holy-water-flask': 'holy-water', 'poison-basic-vial': 'poison-basic', 'ball-bearings-bag-of-1000': 'ball-bearings', 'chain-10-feet': 'chain',
+  'ladder-10-foot': 'ladder', 'pole-10-foot': 'pole', 'string-10-feet': 'string', 'cartographers-tools': 'cartographer-tools', 'diplomats-pack': 'diplomat-pack',
+  'dungeoneers-pack': 'dungeoneer-pack', 'three-dragon-ante-set': 'three-dragon-ante', 'dragonchess-set': 'dragonchess', 'climbers-kit': 'climbers-kit',
+};
+const norm = (n) => n.toLowerCase().replace(/^(crossbow|lantern|rope|clothes|ink|oil|bottle|case|chain|pick|ram|tent|hammer|ladder|pole|spike|string|paper|parchment|pot|mirror|scale|chalk|rations|saddle|barding|horse),\s*([^,(]+)/, '$2 $1').replace(/\(.*?\)/g, '').replace(/[^a-z0-9+]+/g, ' ').trim().replace(/ armor$/, '');
+const ported = [];
+const srd14Path = join(root, 'src', 'content', 'srd', 'items.json');
+if (existsSync(srd14Path)) {
+  const old = JSON.parse(readFileSync(srd14Path, 'utf8'));
+  const all24 = [...items, ...magicItems, ...plus];
+  const ids24 = new Set(all24.map((i) => i.id));
+  const names24 = new Set(all24.map((i) => norm(i.name)));
+  const byName24 = new Map(all24.map((i) => [norm(i.name), i]));
+  const map14 = (id) => RENAMED_2014[id] ?? (ids24.has(id) ? id : undefined);
+  const base24 = (baseId) => {
+    const o = old.find((x) => x.id === baseId);
+    const id = map14(baseId) ?? (o ? byName24.get(norm(o.name))?.id : undefined);
+    return id ? all24.find((x) => x.id === id) : undefined;
+  };
+  for (const it of old) {
+    if (/-plus-\d$/.test(it.id) || RENAMED_2014[it.id]) continue;            // 2024 has its own +N items / renamed equivalent
+    if (!it.magical && (it.weapon || it.armor)) continue;                     // mundane weapons & armor exist in 2024
+    if (names24.has(norm(it.name)) || ids24.has(it.id)) continue;
+    const p = structuredClone(it);
+    p.tags = [...new Set([...(p.tags ?? []), 'from-2014'])];
+    p.source = { book: 'SRD 5.1', kind: 'srd' };
+    if (p.baseItemId) {
+      const b = base24(p.baseItemId);
+      if (b?.weapon && p.weapon) { const keep = { attackBonus: p.weapon.attackBonus, damageBonus: p.weapon.damageBonus, extraDamage: p.weapon.extraDamage, critRange: p.weapon.critRange }; p.weapon = { ...structuredClone(b.weapon), ...Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined)) }; }
+      if (b?.armor && p.armor) p.armor = { ...structuredClone(b.armor), ...(p.armor.bonus ? { bonus: p.armor.bonus } : {}) };
+      p.baseItemId = b?.id;
+    }
+    if (p.contents) p.contents = p.contents.map((c) => ({ ...c, itemId: map14(c.itemId) ?? c.itemId })).filter((c) => ids24.has(c.itemId) || old.some((o) => o.id === c.itemId));
+    p.notes = [p.notes, 'From the 2014 SRD (no 2024 SRD version). Rules text is the 2014 wording; adjust with your DM if needed.'].filter(Boolean).join('\n');
+    ported.push(p);
+  }
+}
+// 2024 magic ammunition +1/+2/+3 (generated like the 2014 set)
+const ammoPlus = [];
+for (const n of [1, 2, 3]) for (const a of items.filter((i) => i.category === 'ammunition')) {
+  ammoPlus.push({ ...structuredClone(a), id: `${a.id}-plus-${n}`, name: `${a.name}, +${n}`, aliases: [`+${n} ${a.name}`], description: `You have a +${n} bonus to attack rolls and damage rolls made with this piece of magic ammunition. Once it hits a target, the ammunition is no longer magical.`, rarity: { 1: 'uncommon', 2: 'rare', 3: 'very-rare' }[n], magical: true, cost: undefined, baseItemId: a.id, tags: ['ammunition', 'magic'], effects: [{ id: `ammo-plus-${n}`, activation: 'carried', manual: true, modifiers: [], description: `+${n} attack and damage when fired from a weapon.` }] });
+}
+for (const v of ammoPlus) delete v.cost;
+console.log(`[content-2024] ported from 2014: ${ported.length}; magic ammunition: ${ammoPlus.length}`);
+write('items.json', [...items, ...magicItems, ...plus, ...ammoPlus, ...ported]);
 
 // ----------------------------------------------------------------- texts, tables, feats, backgrounds, species
 const texts = {};

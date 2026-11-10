@@ -70,7 +70,7 @@ What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 | Backgrounds | 16 | 4 SRD 5.2 (Acolyte, Criminal, Sage, Soldier); 12 summaries |
 | Feats | 10 origin, 37 general, 10 fighting style, 7 epic boons | SRD 5.2 + summaries |
 | Spells | 339 SRD 5.2 + referenced summaries | SRD 5.2 |
-| Items | 579 (mundane with Weapon Mastery, magic items with 110 structured effects and 36 castable-spell items, +N variants) | SRD 5.2 |
+| Items | 751: SRD 5.2 mundane (with Weapon Mastery) and magic items (110 with structured effects, 36 castable-spell items), +N weapons, armor and ammunition, plus 157 SRD 5.1 items with no 2024 version (mounts, vehicles, tack, gear, giant-strength belts, dragon scale mail, figurines, ioun stones, rings, potions…), tagged “2014” and rebased on 2024 weapons/armor | SRD 5.2 + 5.1 |
 
 **Licensing.** SRD 5.1 and SRD 5.2 material © Wizards of the Coast LLC is used under
 [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode). The SRD data conversion is based on
