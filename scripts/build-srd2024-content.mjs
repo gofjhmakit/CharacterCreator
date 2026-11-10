@@ -155,7 +155,12 @@ for (const m of magic) {
   if (category === 'scroll') it.consumable = { destroyOnUse: true };
   const baseMatch = typeLine.match(/^(Armor|Weapon)\s*\(([^)]+)\)/i);
   if (baseMatch) {
-    const spec = baseMatch[2].toLowerCase().replace(/ armor$/, '').trim().replace(/\s+/g, '-');
+    // "Half Plate Armor or Plate Armor" → use the last option (matches the 2014 item); a note records the choice.
+    const slug = (x) => x.replace(/ armor$/, '').trim().replace(/\s+/g, '-');
+    const options = baseMatch[2].toLowerCase().split(/\s+or\s+/);
+    const last = slug(options[options.length - 1]);
+    const lastIsArmor = !!(armorById[last] || armorById[`${last}-armor`]);
+    const spec = lastIsArmor ? last : slug(baseMatch[2].toLowerCase());
     if (baseMatch[1].toLowerCase() === 'armor') {
       const id = armorById[spec] ? spec : armorById[`${spec}-armor`] ? `${spec}-armor` : /medium-or-heavy|any/.test(spec) ? 'chain-mail' : /light/.test(spec) ? 'leather-armor' : undefined;
       const b = id && armorById[id];
@@ -168,6 +173,11 @@ for (const m of magic) {
     }
   }
   if (/shield/i.test(m.name) && it.category === 'armor' && !it.armor) { it.armor = { category: 'shield', baseAc: 2 }; it.category = 'shield'; }
+  if (it.armor && baseMatch && /\sor\s/i.test(baseMatch[2]) && !/any/i.test(baseMatch[2])) it.notes = `Base armor assumed: ${baseMatch[2].split(/\s+or\s+/i).pop()}. Edit the item to choose another option (${baseMatch[2]}).`;
+  if (m.index === 'mithral-armor' && it.armor) { delete it.armor.strRequirement; delete it.armor.stealthDisadvantage; }
+  const acb = body.match(/\+(\d) bonus to (?:Armor Class|AC) while (?:you(?:'re| are)? )?(?:wear|wearing)/i) || body.match(/While (?:you(?:'re| are) )?wearing this armor, you (?:gain|have) a \+(\d) bonus to (?:Armor Class|AC)/i);
+  const curatedAc = (it.effects ?? []).some((e) => (e.modifiers ?? []).some((m2) => m2.target === 'ac'));
+  if (acb && it.armor && it.armor.category !== 'shield' && !curatedAc) it.armor.bonus = Number(acb[1]);
   const wb = body.match(/\+(\d) bonus to attack (?:rolls )?and damage rolls made with this (?:magic )?weapon/i);
   if (wb && it.weapon) { it.weapon.attackBonus = Number(wb[1]); it.weapon.damageBonus = Number(wb[1]); }
   magicItems.push(it);
