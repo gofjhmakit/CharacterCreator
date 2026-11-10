@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
 // Dense one-page character sheet: covers every field of the official 2014 sheet (pages 1–3) and more. Print-friendly.
 import type { TabProps } from '../CharacterView';
@@ -10,6 +11,7 @@ import { lvlLabel } from '../../components/spells';
 export function SheetTab({ ch, d }: TabProps) {
   const db = useDb();
   const roller = useRoller();
+  const un = useUnits();
   const race = db.races.get(ch.race.raceId);
   const sub = race?.subraces?.find((s) => s.id === ch.race.subraceId);
   const bg = db.backgrounds.get(ch.background.backgroundId);
@@ -50,7 +52,7 @@ export function SheetTab({ ch, d }: TabProps) {
           <div className="stat-strip">
             {box('Armor Class', d.ac.total, d.ac.formula.replace(/\s*\(.*\)/, ''))}
             {box('Initiative', signed(d.initiative.total))}
-            {box('Speed', `${d.speed.walk.value} ft`, (['fly', 'swim', 'climb', 'burrow'] as const).filter((m) => d.speed[m].value).map((m) => `${m} ${d.speed[m].value}`).join(', '))}
+            {box('Speed', un.dist(d.speed.walk.value), (['fly', 'swim', 'climb', 'burrow'] as const).filter((m) => d.speed[m].value).map((m) => `${m} ${un.dist(d.speed[m].value)}`).join(', '))}
           </div>
           <div className="stat-strip">
             {box('HP maximum', d.hp.max)}
@@ -70,10 +72,10 @@ export function SheetTab({ ch, d }: TabProps) {
           <div className="panel small"><h3>Equipment</h3>
             <div className="row tight">{(['cp', 'sp', 'ep', 'gp', 'pp'] as const).map((k) => <span key={k} className="chip">{k.toUpperCase()} {ch.currency[k]}</span>)}</div>
             <div style={{ marginTop: 6 }}>{ch.inventory.map((i) => `${i.quantity > 1 ? `${i.quantity}× ` : ''}${i.item.name}${i.equipped ? ' (E)' : ''}${i.attuned ? ' (A)' : ''}`).join(', ') || '—'}</div>
-            <div className="muted" style={{ marginTop: 4 }}>Carrying {d.carrying.weight}/{d.carrying.capacity} lb</div>
+            <div className="muted" style={{ marginTop: 4 }}>Carrying {un.wt(d.carrying.weight)} / {un.wt(d.carrying.capacity)}</div>
           </div>
           <div className="panel small"><h3>Defenses & conditions</h3>
-            <div>Resistances: {d.resistances.map((r) => r.type).join(', ') || '—'}; Immunities: {[...d.immunities, ...d.conditionImmunities].map((r) => r.type).join(', ') || '—'}; Senses: {d.senses.map((s) => `${s.name} ${s.range} ft`).join(', ') || '—'}</div>
+            <div>Resistances: {d.resistances.map((r) => r.type).join(', ') || '—'}; Immunities: {[...d.immunities, ...d.conditionImmunities].map((r) => r.type).join(', ') || '—'}; Senses: {d.senses.map((s) => `${s.name} ${un.dist(s.range)}`).join(', ') || '—'}</div>
             <div>Conditions: {d.activeConditions.join(', ') || 'none'}{ch.combat.exhaustion ? `; exhaustion ${ch.combat.exhaustion}` : ''}</div>
           </div>
         </div>

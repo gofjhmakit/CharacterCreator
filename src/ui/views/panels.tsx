@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 // Reusable play panels: HP & damage, death saves, conditions, resources, spell slots, attacks, toggles, rests.
 import { useState } from 'react';
 import type { Character } from '@/types/character';
@@ -6,18 +7,19 @@ import { CONDITION_IDS, DAMAGE_TYPES, RECHARGE_LABEL, signed, ABILITIES, ABILITY
 import { CONDITION_SUMMARY, EXHAUSTION_LEVELS, EXHAUSTION_2024 } from '@/engine/conditions';
 import { applyDamage, applyHealing, setTempHp, rollDeathSave, shortRest, longRest, spendHitDie } from '@/engine/actions';
 import { useApp } from '@/state/store';
-import { useRoller } from '../components/roll';
+import { useRoller, fmtBonus } from '../components/roll';
 import { Modal, BreakdownView, Pips, Stepper, titleCase } from '../components/common';
 import { rollExpression } from '@/dice/dice';
 import { QUICK_EFFECTS } from '@/content/data/quickEffects';
 import { uid } from '@/engine/factory';
 
-type P = { ch: Character; d: Derived; set: (r: (c: Character) => void) => void; replace: (c: Character) => void };
+type P = { ch: Character; d: Derived; set: (r: (c: Character) => void, undoLabel?: string) => void; replace: (c: Character, undoLabel?: string) => void };
 
 export function HpPanel({ ch, d, set, replace }: P) {
   const [amt, setAmt] = useState('');
   const [type, setType] = useState('');
   const [crit, setCrit] = useState(false);
+  const [conc, setConc] = useState<number | null>(null);
   const toast = useApp((s) => s.toast);
   const roller = useRoller();
   const cur = Math.min(ch.combat.hpCurrent, d.hp.max);
@@ -31,12 +33,14 @@ export function HpPanel({ ch, d, set, replace }: P) {
   const damage = () => {
     const n = parseAmt(); if (n === null) return;
     const r = applyDamage(ch, d, n, type || undefined, { critical: crit });
-    replace(r.character);
-    toast({ kind: r.droppedToZero || r.instantDeath ? 'error' : 'info', text: `Took ${r.taken}${type ? ` ${type}` : ''} damage${r.absorbedByTemp ? ` (${r.absorbedByTemp} absorbed by temp HP)` : ''}.`, detail: [...r.notes, r.instantDeath ? 'Instant death!' : r.droppedToZero ? 'Dropped to 0 HP — unconscious.' : ''].filter(Boolean).join(' ') });
+    replace(r.character, `Took ${r.taken + r.absorbedByTemp} damage`);
+    toast({ kind: r.droppedToZero || r.instantDeath ? 'error' : 'info', text: `Took ${r.taken}${type ? ` ${type}` : ''} damage${r.absorbedByTemp ? ` (${r.absorbedByTemp} absorbed by temp HP)` : ''}.`, detail: [...r.notes, r.instantDeath ? 'Instant death!' : r.droppedToZero ? 'Dropped to 0 HP — unconscious.' : ''].filter(Boolean).join(' '), action: { label: 'Undo', run: () => useApp.getState().undo(ch.id) } }, 6000);
+    if (ch.combat.concentration && r.taken + r.absorbedByTemp > 0 && !r.droppedToZero) setConc(Math.max(10, Math.floor((r.taken + r.absorbedByTemp) / 2)));
+    if (ch.combat.concentration && r.droppedToZero) { set((c) => { c.combat.concentration = undefined; c.effects = c.effects.filter((x) => !x.concentration); }); toast({ kind: 'error', text: `Concentration on ${ch.combat.concentration} ends (0 HP).` }); }
     setAmt('');
   };
-  const heal = () => { const n = parseAmt(); if (n === null) return; replace(applyHealing(ch, d, n)); setAmt(''); };
-  const temp = () => { const n = parseAmt(); if (n === null) return; replace(setTempHp(ch, n)); setAmt(''); };
+  const heal = () => { const n = parseAmt(); if (n === null) return; replace(applyHealing(ch, d, n), `Healed ${n}`); setAmt(''); };
+  const temp = () => { const n = parseAmt(); if (n === null) return; replace(setTempHp(ch, n), `Temp HP ${n}`); setAmt(''); };
   const dying = cur <= 0;
   return (
     <div className="panel stack">
@@ -57,10 +61,41 @@ export function HpPanel({ ch, d, set, replace }: P) {
         <button onClick={temp} disabled={!amt.trim()}>Set temp HP</button>
         {ch.combat.hpTemp > 0 && <button className="ghost small" onClick={() => set((c) => { c.combat.hpTemp = 0; })}>Clear temp</button>}
       </div>
+      {conc !== null && ch.combat.concentration && <ConcentrationCheck dc={conc} ch={ch} d={d} set={set} onDone={() => setConc(null)} />}
       {dying && <DeathSaves ch={ch} set={set} replace={replace} />}
       <div className="row between">
         <HitDice ch={ch} d={d} replace={replace} />
         <button className="small" onClick={() => roller.d20('Initiative', d.initiative, 'initiative', { halflingLucky: d.flags.has('halfling-lucky') })}>Roll initiative {signed(d.initiative.total)}</button>
+      </div>
+    </div>
+  );
+}
+
+/** After taking damage while concentrating: roll the CON save (DC = max(10, half damage)); a failure ends concentration. */
+function ConcentrationCheck({ dc, ch, d, set, onDone }: { dc: number; ch: Character; d: Derived; set: P['set']; onDone: () => void }) {
+  const roller = useRoller();
+  const toast = useApp((s) => s.toast);
+  const end = (why: string) => {
+    const name = ch.combat.concentration;
+    set((c) => { c.combat.concentration = undefined; c.effects = c.effects.filter((x) => !x.concentration); }, `Lost concentration on ${name}`);
+    toast({ kind: 'error', text: `Concentration on ${name} ends.`, detail: why, action: { label: 'Undo', run: () => useApp.getState().undo(ch.id) } }, 7000);
+    onDone();
+  };
+  const b = d.saves.con;
+  const conditional = b.conditional.filter((c) => /concentrat/i.test(c.condition));
+  return (
+    <div className="notice" style={{ borderLeftColor: 'var(--gold)' }} role="alert">
+      <b>Concentration check:</b> CON save DC {dc} to keep <i>{ch.combat.concentration}</i>.
+      {conditional.length > 0 && <div className="small good">{conditional.map((c) => `${c.label}: ${c.op === 'advantage' ? 'advantage' : c.value ? signed(c.value) : ''} ${c.condition}`).join('; ')}</div>}
+      <div className="row" style={{ marginTop: 6 }}>
+        <button className="small primary" onClick={() => {
+          const adv = conditional.some((c) => c.op === 'advantage');
+          const bonus = conditional.filter((c) => c.op !== 'advantage' && c.value).reduce((s2, c) => s2 + (c.value ?? 0), 0);
+          const r = roller.d20(`Concentration (DC ${dc})`, { ...b, total: b.total + bonus, mode: adv && b.mode !== 'disadvantage' ? 'advantage' : adv && b.mode === 'disadvantage' ? 'normal' : b.mode }, 'save');
+          if (r.total >= dc) { toast({ kind: 'success', text: `Concentration held (${r.total} vs DC ${dc}).` }); onDone(); } else end(`Rolled ${r.total} vs DC ${dc}.`);
+        }}>Roll CON save {fmtBonus(b)}</button>
+        <button className="small" onClick={() => { toast({ kind: 'success', text: 'Concentration kept.' }); onDone(); }}>Passed (rolled at table)</button>
+        <button className="small danger" onClick={() => end('Marked as failed.')}>Failed</button>
       </div>
     </div>
   );
@@ -81,7 +116,7 @@ function DeathSaves({ ch, set, replace }: Omit<P, 'd'>) {
   const roll = () => {
     const r = rollDeathSave(ch);
     addRoll(r.roll);
-    replace(r.character);
+    replace(r.character, 'Death save');
     toast({ kind: r.result.includes('fail') || r.result === 'failure' ? 'error' : 'success', text: `Death save: ${r.roll.natural} — ${r.result.replace('-', ' ')}`, detail: r.status === 'dead' ? 'Three failures: the character dies.' : r.status === 'stable' ? 'Three successes: stable.' : r.status === 'revived' ? 'Natural 20: regain 1 HP!' : undefined });
   };
   return (
@@ -107,7 +142,7 @@ function HitDice({ ch, d, replace }: Omit<P, 'set'>) {
         <button key={h.die} className="small" disabled={h.used >= h.total} title={`Spend a d${h.die} (${h.classes.join(', ')})`} onClick={() => {
           const r = spendHitDie(ch, d, h.die);
           if (r.roll) addRoll(r.roll);
-          replace(r.character);
+          replace(r.character, `Spent a d${h.die} Hit Die`);
           toast({ kind: 'success', text: `Hit Die d${h.die}: healed ${r.healed}.` });
         }}>d{h.die}: {h.total - h.used}/{h.total}</button>
       ))}
@@ -157,7 +192,7 @@ export function ResourcesPanel({ ch, d, set }: Omit<P, 'replace'>) {
             <span className="grow"><b>{r.name}</b>{r.die && <span className="chip gold" style={{ marginLeft: 6 }}>{r.die}</span>}<br /><span className="small muted">{RECHARGE_LABEL[r.recharge]}{r.shortRecover ? ` (regain ${r.shortRecover} on a short rest)` : ''}{r.overridden ? ' · max overridden' : ''}</span></span>
             {r.max >= 99 ? <span className="small">Unlimited</span> : r.pool || r.max > 8
               ? <span className="row tight"><Stepper value={r.remaining} min={0} max={r.max} onChange={(v) => set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: r.max - v }; })} /><span className="small muted">/ {r.max}</span></span>
-              : <Pips max={r.max} used={r.used} onSet={(u) => set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: u }; })} />}
+              : <Pips max={r.max} used={r.used} onSet={(u) => set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: u }; }, `${r.name} ${u > r.used ? 'used' : 'restored'}`)} />}
             <button className="ghost small" onClick={() => setEdit(r.id)} aria-label={`Adjust ${r.name}`}>⋯</button>
           </div>
         ))}
@@ -204,7 +239,7 @@ export function SlotsPanel({ ch, d, set }: Omit<P, 'replace'>) {
       <div className="panel-title"><h3>Spell slots</h3></div>
       <div className="stack">
         {d.slots.map((s) => (
-          <div key={s.level} className="row"><span className="caps" style={{ width: 54 }}>Level {s.level}</span><Pips square max={s.max} used={s.used} onSet={(u) => set((c) => { c.spells.slotsUsed[s.level] = u; })} /><span className="small muted">{s.max - s.used}/{s.max}</span></div>
+          <div key={s.level} className="row"><span className="caps" style={{ width: 54 }}>Level {s.level}</span><Pips square max={s.max} used={s.used} onSet={(u) => set((c) => { c.spells.slotsUsed[s.level] = u; }, `Level ${s.level} slot ${u > s.used ? 'used' : 'restored'}`)} /><span className="small muted">{s.max - s.used}/{s.max}</span></div>
         ))}
         {d.pact && <div className="row"><span className="caps" style={{ width: 54 }}>Pact</span><Pips square kind="" max={d.pact.slots} used={d.pact.used} onSet={(u) => set((c) => { c.spells.pactSlotsUsed = u; })} /><span className="small muted">level {d.pact.level} · short rest</span></div>}
       </div>
@@ -215,6 +250,7 @@ export function SlotsPanel({ ch, d, set }: Omit<P, 'replace'>) {
 
 export function AttacksPanel({ ch, d, compact }: { ch: Character; d: Derived; compact?: boolean }) {
   const roller = useRoller();
+  const un = useUnits();
   const [info, setInfo] = useState<AttackView | null>(null);
   const [twoHanded, setTwoHanded] = useState<Record<string, boolean>>({});
   const rollDamage = (a: AttackView, crit: boolean) => {
@@ -242,14 +278,14 @@ export function AttacksPanel({ ch, d, compact }: { ch: Character; d: Derived; co
                     {a.mastery && <div className="rider" title={a.mastery.description}><span className="chip gold">Mastery: {a.mastery.name}</span></div>}
                     {a.extraDamage.length > 0 && <div className="rider">{a.extraDamage.map((x) => `+${x.dice} ${x.type}${x.condition ? ` (${x.condition})` : ''}`).join(', ')}</div>}
                   </td>
-                  <td className="num"><button className={`small ${a.attack.mode === 'advantage' ? 'adv-dot' : a.attack.mode === 'disadvantage' ? 'dis-dot' : ''}`} style={{ position: 'relative' }} onClick={() => roller.d20(`${a.name} attack`, a.attack, 'attack', { critRange: a.critRange, halflingLucky: d.flags.has('halfling-lucky') })}>{signed(a.attack.total)}</button></td>
+                  <td className="num"><button className={`small ${a.attack.mode === 'advantage' ? 'adv-dot' : a.attack.mode === 'disadvantage' ? 'dis-dot' : ''}`} style={{ position: 'relative' }} onClick={() => roller.d20(`${a.name} attack`, a.attack, 'attack', { critRange: a.critRange, halflingLucky: d.flags.has('halfling-lucky') })}>{fmtBonus(a.attack)}</button></td>
                   <td className="nowrap">
                     <button className="small" onClick={() => rollDamage(a, false)}>{dice === '0' ? '' : dice}{a.damageBonus.total ? ` ${a.damageBonus.total > 0 ? '+' : '−'} ${Math.abs(a.damageBonus.total)}` : ''}</button>
                     <button className="small ghost" title="Roll critical damage (double dice)" onClick={() => rollDamage(a, true)}>Crit</button>
                     <span className="small muted"> {titleCase(String(a.damageType))}</span>
                     {a.versatileDice && <label className="check small" style={{ marginLeft: 6 }}><input type="checkbox" checked={!!twoHanded[a.id]} onChange={(e) => setTwoHanded({ ...twoHanded, [a.id]: e.target.checked })} />2H</label>}
                   </td>
-                  {!compact && <td className="small nowrap">{a.range}</td>}
+                  {!compact && <td className="small nowrap">{un.text(a.range)}</td>}
                   <td className="small">{a.critRange < 20 && <span className="chip">crit {a.critRange}–20</span>}</td>
                 </tr>
               );
@@ -296,8 +332,8 @@ export function RestButtons({ ch, d, replace }: Omit<P, 'set'>) {
   const toast = useApp((s) => s.toast);
   const doRest = () => {
     const r = mode === 'short' ? shortRest(ch, d) : longRest(ch, d, { dawn });
-    replace(r.character);
-    toast({ kind: 'success', text: `${mode === 'short' ? 'Short' : 'Long'} rest complete.`, detail: r.summary.restored.length ? `Restored: ${r.summary.restored.join(', ')}` : 'Nothing to restore.' }, 6000);
+    replace(r.character, mode === 'short' ? 'Short rest' : 'Long rest');
+    toast({ kind: 'success', text: `${mode === 'short' ? 'Short' : 'Long'} rest complete.`, detail: r.summary.restored.length ? `Restored: ${r.summary.restored.join(', ')}` : 'Nothing to restore.', action: { label: 'Undo', run: () => useApp.getState().undo(ch.id) } }, 8000);
     setMode(null);
   };
   const shortRes = d.resources.filter((r) => r.recharge === 'short');
@@ -339,8 +375,8 @@ export function QuickEffectsPanel({ ch, set }: { ch: Character; set: P['set'] })
           <div className="list">
             {QUICK_EFFECTS.map((q) => (
               <div key={q.id} className="list-row">
-                <span className="grow"><b>{q.name}</b>{q.concentration && <span className="badge" style={{ marginLeft: 6 }}>conc.</span>}<br /><span className="small ink2">{q.description}</span></span>
-                <button className="small" onClick={() => { set((c) => { if (q.concentration) { c.effects = c.effects.filter((x) => !x.concentration); c.combat.concentration = q.name; } c.effects.push({ id: uid('fx'), name: q.name, effect: structuredClone(q.effect), concentration: q.concentration, createdAt: new Date().toISOString() }); }); setOpen(false); }}>Apply</button>
+                <span className="grow"><b>{q.name}</b>{q.concentration && <span className="badge" style={{ marginLeft: 6 }}>conc.</span>}{q.oneShot && <span className="badge" style={{ marginLeft: 6 }}>one roll</span>}<br /><span className="small ink2">{q.description}</span></span>
+                <button className="small" onClick={() => { set((c) => { if (q.concentration) { c.effects = c.effects.filter((x) => !x.concentration); c.combat.concentration = q.name; } c.effects.push({ id: uid('fx'), name: q.name, effect: structuredClone(q.effect), concentration: q.concentration, oneShot: q.oneShot, createdAt: new Date().toISOString() }); }, `Applied ${q.name}`); setOpen(false); }}>Apply</button>
               </div>
             ))}
           </div>
@@ -352,6 +388,7 @@ export function QuickEffectsPanel({ ch, set }: { ch: Character; set: P['set'] })
 }
 
 export function DefensesPanel({ d }: { d: Derived }) {
+  const un = useUnits();
   const any = d.resistances.length + d.immunities.length + d.vulnerabilities.length + d.conditionImmunities.length + d.senses.length + d.damageReduction.length;
   return (
     <div className="panel">
@@ -363,7 +400,7 @@ export function DefensesPanel({ d }: { d: Derived }) {
         {d.vulnerabilities.length > 0 && <><dt>Vulnerable</dt><dd>{d.vulnerabilities.map((r) => <span key={r.type} className="chip red" title={r.source} style={{ marginRight: 4 }}>{titleCase(r.type)}</span>)}</dd></>}
         {d.conditionImmunities.length > 0 && <><dt>Cond. immune</dt><dd>{d.conditionImmunities.map((r) => <span key={r.type} className="chip" title={r.source} style={{ marginRight: 4 }}>{titleCase(r.type)}</span>)}</dd></>}
         {d.damageReduction.length > 0 && <><dt>Reduction</dt><dd>{d.damageReduction.map((p) => `${p.label} ${p.value}`).join(', ')}</dd></>}
-        {d.senses.length > 0 && <><dt>Senses</dt><dd>{d.senses.map((s) => `${titleCase(s.name)} ${s.range} ft`).join(', ')}</dd></>}
+        {d.senses.length > 0 && <><dt>Senses</dt><dd>{d.senses.map((s) => `${titleCase(s.name)} ${un.dist(s.range)}`).join(', ')}</dd></>}
       </dl>
       {d.resistances.some((r) => r.conditional) && <div className="small muted">* {d.resistances.filter((r) => r.conditional).map((r) => `${r.type}: ${r.conditional}`).join('; ')}</div>}
     </div>
@@ -378,7 +415,7 @@ export function SavesMini({ d }: { d: Derived }) {
       <div className="grid cols-3" style={{ gap: 6 }}>
         {ABILITIES.map((a) => (
           <button key={a} className={`small ${d.saves[a].proficient ? 'on' : ''} ${d.saves[a].mode === 'advantage' ? 'adv-dot' : d.saves[a].mode === 'disadvantage' ? 'dis-dot' : ''}`} style={{ position: 'relative', justifyContent: 'space-between' }} onClick={() => roller.d20(`${ABILITY_NAMES[a]} save`, d.saves[a], 'save', { halflingLucky: d.flags.has('halfling-lucky') })}>
-            <span>{a.toUpperCase()}</span><span className="num">{signed(d.saves[a].total)}</span>
+            <span>{a.toUpperCase()}</span><span className="num">{fmtBonus(d.saves[a])}</span>
           </button>
         ))}
       </div>

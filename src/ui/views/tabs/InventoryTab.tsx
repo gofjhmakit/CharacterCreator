@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import type { TabProps } from '../CharacterView';
@@ -30,6 +31,7 @@ export function InventoryTab({ ch, d, set, replace }: TabProps) {
   const [sort, setSort] = useState<'name' | 'weight' | 'category' | 'equipped'>('equipped');
 
   const c = d.carrying;
+  const un = useUnits();
   const pct = Math.min(1, c.weight / Math.max(1, c.capacity));
   let items = ch.inventory.filter((i) => (cat === 'all' || i.item.category === cat) && (!q || `${i.item.name} ${i.item.type ?? ''} ${(i.item.tags ?? []).join(' ')}`.toLowerCase().includes(q.toLowerCase())));
   items = [...items].sort((a, b) => sort === 'name' ? a.item.name.localeCompare(b.item.name) : sort === 'weight' ? b.item.weight * b.quantity - a.item.weight * a.quantity : sort === 'category' ? a.item.category.localeCompare(b.item.category) || a.item.name.localeCompare(b.item.name) : Number(b.equipped) - Number(a.equipped) || Number(b.attuned) - Number(a.attuned) || a.item.name.localeCompare(b.item.name));
@@ -49,10 +51,10 @@ export function InventoryTab({ ch, d, set, replace }: TabProps) {
       next = applyHealing(next, d, r.total);
       toast({ kind: 'success', text: `${it.item.name}: healed ${r.total}.` });
     } else toast({ kind: 'info', text: `Used ${it.item.name}.`, detail: it.item.consumable?.onUse?.map((o) => o.text).filter(Boolean).join(' ') });
-    replace(next);
+    replace(next, `Used ${it.item.name}`);
   };
   const remove = async (it: InventoryItem) => {
-    if (await ask({ title: 'Remove item?', message: <>Remove <b>{it.item.name}</b>{it.quantity > 1 ? ` (×${it.quantity})` : ''} from the inventory?</>, confirmLabel: 'Remove', danger: true })) set((x) => { x.inventory = x.inventory.filter((y) => y.id !== it.id && y.containerId !== it.id); });
+    if (await ask({ title: 'Remove item?', message: <>Remove <b>{it.item.name}</b>{it.quantity > 1 ? ` (×${it.quantity})` : ''} from the inventory?</>, confirmLabel: 'Remove', danger: true })) set((x) => { x.inventory = x.inventory.filter((y) => y.id !== it.id && y.containerId !== it.id); }, `Removed ${it.item.name}`);
   };
   const containers = ch.inventory.filter((i) => i.item.category === 'container' || /bag|pack|haversack|hole|chest|pouch/i.test(i.item.name));
 
@@ -64,13 +66,13 @@ export function InventoryTab({ ch, d, set, replace }: TabProps) {
           <div className="row">
             {(['pp', 'gp', 'ep', 'sp', 'cp'] as const).map((k) => <label key={k} className="field" style={{ width: 82 }}><span className="caps">{k}</span><NumberField className="" value={ch.currency[k]} min={0} onChange={(v) => set((x) => { x.currency[k] = v; })} /></label>)}
           </div>
-          <div className="small muted" style={{ marginTop: 6 }}>Total ≈ {(ch.currency.pp * 10 + ch.currency.gp + ch.currency.ep * 0.5 + ch.currency.sp * 0.1 + ch.currency.cp * 0.01).toFixed(2)} gp · coins weigh {c.coinWeight.toFixed(1)} lb</div>
+          <div className="small muted" style={{ marginTop: 6 }}>Total ≈ {(ch.currency.pp * 10 + ch.currency.gp + ch.currency.ep * 0.5 + ch.currency.sp * 0.1 + ch.currency.cp * 0.01).toFixed(2)} gp · coins weigh {un.wt(c.coinWeight)}</div>
         </div>
         <div className="panel">
           <div className="panel-title"><h3>Carrying</h3><span className="spacer" /><span className={`chip ${c.status === 'normal' ? '' : 'red'}`}>{titleCase(c.status)}</span></div>
-          <div className="row between"><span className="num" style={{ fontSize: '1.4rem', fontWeight: 700 }}>{c.weight} <span className="muted small">/ {c.capacity} lb</span></span><span className="small muted">Push/drag/lift {c.pushDragLift} lb</span></div>
+          <div className="row between"><span className="num" style={{ fontSize: '1.4rem', fontWeight: 700 }}>{un.wt(c.weight)} <span className="muted small">/ {un.wt(c.capacity)}</span></span><span className="small muted">Push/drag/lift {un.wt(c.pushDragLift)}</span></div>
           <div className="hp-bar" style={{ marginTop: 6 }}><div className={`fill ${pct > 0.9 ? 'crit' : pct > 0.66 ? 'low' : ''}`} style={{ width: `${pct * 100}%` }} /></div>
-          <div className="small muted" style={{ marginTop: 6 }}>{ch.settings.encumbrance === 'variant' ? `Variant encumbrance: encumbered over ${c.encumberedAt} lb, heavily over ${c.heavilyAt} lb.` : ch.settings.encumbrance === 'off' ? 'Encumbrance tracking is off.' : 'Standard rule: carrying capacity = STR × 15.'}</div>
+          <div className="small muted" style={{ marginTop: 6 }}>{ch.settings.encumbrance === 'variant' ? `Variant encumbrance: encumbered over ${un.wt(c.encumberedAt)}, heavily over ${un.wt(c.heavilyAt)}.` : ch.settings.encumbrance === 'off' ? 'Encumbrance tracking is off.' : 'Standard rule: carrying capacity = STR × 15.'}</div>
         </div>
         <div className="panel">
           <div className="panel-title"><h3>Attunement</h3><span className="spacer" /><span className={`chip ${d.attunement.count > d.attunement.limit ? 'red' : ''}`}>{d.attunement.count}/{d.attunement.limit}</span></div>
@@ -106,12 +108,12 @@ export function InventoryTab({ ch, d, set, replace }: TabProps) {
                         {it.origin.kind === 'custom' && <span className="badge custom" style={{ marginLeft: 4 }}>custom</span>}
                         {modified && <span className="badge" style={{ marginLeft: 4 }} title="This copy differs from its template">modified</span>}
                         {it.containerId && <span className="small muted"> in {ch.inventory.find((x) => x.id === it.containerId)?.item.name}</span>}
-                        <div className="small muted">{ITEM_CATEGORY_LABEL[it.item.category] ?? it.item.category}{itemSummary(it.item) ? ` · ${itemSummary(it.item)}` : ''}</div>
+                        <div className="small muted">{ITEM_CATEGORY_LABEL[it.item.category] ?? it.item.category}{itemSummary(it.item) ? ` · ${un.text(itemSummary(it.item))}` : ''}</div>
                         {it.notes && <div className="small ink2">{it.notes}</div>}
                       </td>
                       <td className="num"><Stepper value={it.quantity} min={1} max={9999} onChange={(v) => set((x) => { const y = x.inventory.find((z) => z.id === it.id); if (y) y.quantity = v; })} /></td>
-                      <td className="num small">{it.excludeWeight ? '—' : +(it.item.weight * it.quantity).toFixed(2)}</td>
-                      <td>{equippable && <input type="checkbox" aria-label={`Equip ${it.item.name}`} checked={it.equipped} onChange={(e) => { const r = setEquipped(ch, it.id, e.target.checked); replace(r.character); if (r.unequipped.length) toast({ kind: 'info', text: `Equipped ${it.item.name}`, detail: `Unequipped ${r.unequipped.join(', ')} (slot full: one armor, two hands, two rings).` }); }} />}
+                      <td className="num small">{it.excludeWeight ? '—' : un.wt(it.item.weight * it.quantity)}</td>
+                      <td>{equippable && <input type="checkbox" aria-label={`Equip ${it.item.name}`} checked={it.equipped} onChange={(e) => { const r = setEquipped(ch, it.id, e.target.checked); replace(r.character, `${e.target.checked ? 'Equipped' : 'Unequipped'} ${it.item.name}`); if (r.unequipped.length) toast({ kind: 'info', text: `Equipped ${it.item.name}`, detail: `Unequipped ${r.unequipped.join(', ')} (slot full: one armor, two hands, two rings).` }); }} />}
                         {it.equipped && it.item.weapon?.kind === 'melee' && it.item.weapon.properties.includes('light') && <label className="check small" title="Off-hand (two-weapon fighting)"><input type="checkbox" checked={!!it.offHand} onChange={(e) => set((x) => { const y = x.inventory.find((z) => z.id === it.id); if (y) y.offHand = e.target.checked; })} />off</label>}
                       </td>
                       <td>{it.item.attunement?.required && <input type="checkbox" aria-label={`Attune ${it.item.name}`} checked={it.attuned} onChange={(e) => attune(it, e.target.checked)} title={it.item.attunement.restriction ? `Requires attunement by ${it.item.attunement.restriction}` : ''} />}</td>

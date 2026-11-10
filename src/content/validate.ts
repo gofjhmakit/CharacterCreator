@@ -24,6 +24,7 @@ export function validateEffect(e: Effect, where: string, out: ContentIssue[]) {
       if (err) out.push({ level: 'error', where: `${where}/${e.id}`, message: `Bad formula "${m.formula}": ${err}` });
     }
     if (m.target === 'extra-damage' && typeof m.value === 'string' && !isValidDice(m.value)) out.push({ level: 'error', where: `${where}/${e.id}`, message: `Bad dice "${m.value}"` });
+    if (m.dice !== undefined && !isValidDice(String(m.dice).replace(/^-/, ''))) out.push({ level: 'error', where: `${where}/${e.id}`, message: `Bad modifier dice "${m.dice}"` });
     if (m.target === 'ac-formula' && !m.acFormula) out.push({ level: 'error', where: `${where}/${e.id}`, message: 'ac-formula modifier without acFormula' });
   }
   for (const o of [...(e.outcomes ?? []), ...(e.save?.onFailure ?? []), ...(e.save?.onSuccess ?? [])]) {

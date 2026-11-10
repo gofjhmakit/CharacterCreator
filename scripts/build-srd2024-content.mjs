@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CURATED, eff, ATT } from './curated-items.mjs';
+import { CURATED, CURATED_2024, CURATED_SPELLS, CURATED_SPELLS_2024, eff, ATT } from './curated-items.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(root, 'vendor', 'srd-5e-database-2024');
@@ -139,12 +139,15 @@ for (const m of magic) {
     source: SRD, effects: [], aliases: [], tags: ['magic'],
   };
   if (/amulet|necklace|periapt|medallion|brooch|scarab/i.test(m.name) && category === 'wondrous') it.category = 'amulet';
-  const ch = body.match(/has (\d+) charges/i);
+  const ch = body.match(/(?:has|have|of its) (\d+) charges/i);
   if (ch) {
     const r = body.match(/regains? (1d\d+(?:\s*\+\s*\d+)?|\d+|all) expended charges? (?:daily at dawn|at dawn|each dawn)/i);
     it.charges = { max: Number(ch[1]), recharge: r ? 'dawn' : 'none', ...(r && r[1] !== 'all' ? { rechargeAmount: r[1].replace(/\s+/g, '') } : {}) };
   }
-  if (CURATED[m.index]) it.effects = CURATED[m.index].map((e) => ({ ...e, id: `${m.index}--${e.id}` }));
+  const cur = CURATED_2024[m.index] ?? CURATED[m.index];
+  if (cur) it.effects = cur.map((e) => ({ ...e, id: `${m.index}--${e.id}` }));
+  const curSpells = CURATED_SPELLS_2024[m.index] ?? CURATED_SPELLS[m.index];
+  if (curSpells) it.spells = curSpells.filter((x) => spells.some((s) => s.id === x.spellId));
   const rm = m.index.match(/^(ring|armor|potion)-of-resistance-([a-z]+)$/);
   if (rm) it.effects = [eff(`resistance-${rm[2]}`, rm[1] === 'potion' ? 'toggle' : ATT, [{ target: `resistance:${rm[2]}`, op: 'grant' }])];
   if (HEAL[m.index]) { it.consumable = { onUse: [{ kind: 'heal', dice: HEAL[m.index] }], destroyOnUse: true }; it.aliases = ['healing potion']; it.weight = 0.5; }

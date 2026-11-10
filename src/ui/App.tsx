@@ -34,7 +34,7 @@ function Toasts() {
         <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismiss(t.id)}>
           {t.kind === 'roll' ? (
             <div className="row between"><div className="grow"><div style={{ fontWeight: 700 }}>{t.text.replace(/: -?\d+$/, '')}</div><div className="small muted">{t.detail}</div></div><div className="total num">{t.text.match(/-?\d+$/)?.[0]}</div></div>
-          ) : (<><div>{t.text}</div>{t.detail && <div className="small muted">{t.detail}</div>}</>)}
+          ) : (<div className="row between" style={{ flexWrap: 'nowrap' }}><div className="grow"><div>{t.text}</div>{t.detail && <div className="small muted">{t.detail}</div>}</div>{t.action && <button className="small" onClick={(e) => { e.stopPropagation(); t.action!.run(); dismiss(t.id); }}>{t.action.label}</button>}</div>)}
         </div>
       ))}
     </div>

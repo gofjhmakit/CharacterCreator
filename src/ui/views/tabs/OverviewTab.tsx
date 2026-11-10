@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
 import { useState } from 'react';
 import type { TabProps } from '../CharacterView';
@@ -8,6 +9,7 @@ import { Modal, BreakdownView } from '../../components/common';
 import { useApp } from '@/state/store';
 import { SpellDetailModal } from '../../components/spells';
 import { TriggerReminder } from './SpellsTab';
+import { CompanionsPanel } from '../Companions';
 import type { SpellDef } from '@/types/content';
 import { href } from '../../router';
 
@@ -39,13 +41,14 @@ export function AbilityBoxes({ d }: { d: TabProps['d'] }) {
 export function StatStrip({ d, ch }: Pick<TabProps, 'd' | 'ch'>) {
   const roller = useRoller();
   const [show, setShow] = useState<null | 'ac' | 'init' | 'speed' | 'pp'>(null);
+  const un = useUnits();
   const other = (['fly', 'swim', 'climb', 'burrow'] as const).filter((m) => d.speed[m].value > 0);
   return (
     <>
       <div className="stat-strip">
         <div className="stat clickable" onClick={() => setShow('ac')}><span className="label">Armor Class</span><span className="value">{d.ac.total}</span><span className="sub">{d.ac.override !== undefined ? 'override' : d.ac.formula.replace(/\s*\(.*\)/, '')}</span></div>
         <div className={`stat clickable ${d.initiative.mode === 'advantage' ? 'adv' : d.initiative.mode === 'disadvantage' ? 'dis' : ''}`} onClick={() => roller.d20('Initiative', d.initiative, 'initiative', { halflingLucky: d.flags.has('halfling-lucky') })} onContextMenu={(e) => { e.preventDefault(); setShow('init'); }} title="Click to roll; right-click for breakdown"><span className="label">Initiative</span><span className="value">{signed(d.initiative.total)}</span><span className="sub">roll</span></div>
-        <div className="stat clickable" onClick={() => setShow('speed')}><span className="label">Speed</span><span className="value">{d.speed.walk.value}</span><span className="sub">{other.length ? other.map((m) => `${m} ${d.speed[m].value}`).join(', ') : 'ft'}</span></div>
+        <div className="stat clickable" onClick={() => setShow('speed')}><span className="label">Speed</span><span className="value">{un.u === 'metric' ? un.dist(d.speed.walk.value).replace(' m', '') : d.speed.walk.value}</span><span className="sub">{other.length ? other.map((m) => `${m} ${un.dist(d.speed[m].value)}`).join(', ') : un.short}</span></div>
         <div className="stat"><span className="label">Proficiency</span><span className="value">{signed(d.profBonus)}</span></div>
         <div className="stat clickable" onClick={() => setShow('pp')}><span className="label">Passive Perc.</span><span className="value">{d.passives.perception.total}</span><span className="sub">Inv {d.passives.investigation.total} · Ins {d.passives.insight.total}</span></div>
         <div className="stat"><span className="label">Hit Dice</span><span className="value" style={{ fontSize: '1.2rem' }}>{d.hitDice.map((h) => `${h.total - h.used}d${h.die}`).join(' ')}</span><span className="sub">remaining</span></div>
@@ -113,6 +116,7 @@ export function OverviewTab(p: TabProps) {
           <SlotsPanel {...p} />
           <TogglesPanel {...p} />
           <QuickEffectsPanel ch={ch} set={p.set} />
+          {(ch.companions?.length ?? 0) > 0 && <CompanionsPanel ch={ch} d={d} set={p.set} />}
           <QuickSpells ch={ch} d={d} />
           <DefensesPanel d={d} />
           {d.triggers.length > 0 && <div className="panel stack"><div className="panel-title"><h3>Effects to remember</h3><span className="badge manual">triggered</span></div>{d.triggers.map((t, i) => <TriggerReminder key={i} r={t} set={p.set} />)}</div>}

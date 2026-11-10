@@ -1,5 +1,5 @@
-import { RulesetProvider } from '@/ui/ruleset';
-import { useMemo, useState } from 'react';
+import { RulesetProvider, CharacterIdContext } from '@/ui/ruleset';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp, useCharacter } from '@/state/store';
 import { derive } from '@/engine/derive';
 import { href } from '../router';
@@ -39,8 +39,8 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
   const [more, setMore] = useState(false);
   const d = useMemo(() => (ch ? derive(ch, db) : null), [ch, db]);
   if (!ch || !d) return <Empty>Character not found. <a href={href()}>Back to characters</a></Empty>;
-  const set = (r: (c: Character) => void) => update(id, r);
-  const replace = (c: Character) => replaceC(c);
+  const set = (r: (c: Character) => void, undoLabel?: string) => update(id, r, undoLabel);
+  const replace = (c: Character, undoLabel?: string) => replaceC(c, undoLabel);
   const props = { ch, d, set, replace };
   const race = db.races.get(ch.race.raceId);
   const sub = race?.subraces?.find((s) => s.id === ch.race.subraceId);
@@ -65,6 +65,7 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
 
   return (
     <RulesetProvider value={ch.ruleset}>
+    <CharacterIdContext.Provider value={id}>
     <div>
       {saveState?.status === 'error' && <div className="notice error" style={{ marginBottom: 10 }}><b>Changes are not being saved.</b> {saveState.error} Export this character to keep a copy.</div>}
       <div className="char-head">
@@ -75,6 +76,7 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
         </div>
         <div className="head-actions row" style={{ justifyContent: 'flex-end' }}>
           <SaveIndicator id={id} />
+          <UndoButton id={id} />
           <span className="chip" title="Armor Class">AC {d.ac.total}</span>
           <span className="chip" title="Hit points">HP {Math.min(ch.combat.hpCurrent, d.hp.max)}/{d.hp.max}{ch.combat.hpTemp ? ` +${ch.combat.hpTemp}` : ''}</span>
           <span className="chip" title="Proficiency bonus">PB {signed(d.profBonus)}</span>
@@ -96,8 +98,25 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
         </Modal>
       )}
     </div>
+    </CharacterIdContext.Provider>
     </RulesetProvider>
   );
 }
 
-export type TabProps = { ch: Character; d: ReturnType<typeof derive>; set: (r: (c: Character) => void) => void; replace: (c: Character) => void };
+export type TabProps = { ch: Character; d: ReturnType<typeof derive>; set: (r: (c: Character) => void, undoLabel?: string) => void; replace: (c: Character, undoLabel?: string) => void };
+
+function UndoButton({ id }: { id: string }) {
+  const last = useApp((s) => s.history[id]?.[s.history[id].length - 1]);
+  const undo = useApp((s) => s.undo);
+  const toast = useApp((s) => s.toast);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement;
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA|SELECT/.test(el.tagName)) { e.preventDefault(); const l = undo(id); if (l) toast({ kind: 'info', text: `Undone: ${l}` }); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [id, undo, toast]);
+  if (!last) return null;
+  return <button className="small" title="Undo the last action (Ctrl/Cmd+Z)" onClick={() => { const l = undo(id); if (l) toast({ kind: 'info', text: `Undone: ${l}` }); }}>↶ Undo: {last.label}</button>;
+}

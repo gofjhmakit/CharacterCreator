@@ -30,7 +30,7 @@ export function ProgressionTab({ ch, d, set, replace }: TabProps) {
       e.level -= 1;
       e.hpRolls = e.hpRolls.slice(0, Math.max(0, c.classes[0] === e ? e.level - 1 : e.level));
       if (e.level <= 0) c.classes = c.classes.filter((x) => x !== e);
-    });
+    }, `Removed a ${def?.name ?? ''} level`);
     toast({ kind: 'info', text: `Removed a ${def?.name} level.` });
   };
 
@@ -89,7 +89,7 @@ export function ProgressionTab({ ch, d, set, replace }: TabProps) {
           return <div key={c.classId} className="small" style={{ marginBottom: 8 }}><b>{def.name}</b>: next — {[...upcoming.map((f) => `L${f.level} ${f.name}`), ...asi.map((l) => `L${l} ASI/feat`), ...(c.level < def.subclassLevel ? [`L${def.subclassLevel} ${def.subclassLabel}`] : [])].join(' · ') || 'no new features in the next 3 levels'}</div>;
         })}
       </div>
-      {levelUp && <LevelUpDialog ch={ch} d={d} onClose={() => setLevelUp(false)} onApply={(c) => { replace(c); setLevelUp(false); toast({ kind: 'success', text: 'Level up!', detail: 'New features and choices are on the Features tab.' }); }} />}
+      {levelUp && <LevelUpDialog ch={ch} d={d} onClose={() => setLevelUp(false)} onApply={(c) => { replace(c, 'Level up'); setLevelUp(false); toast({ kind: 'success', text: 'Level up!', detail: 'New features and choices are on the Features tab.' }); }} />}
       {node}
     </div>
   );

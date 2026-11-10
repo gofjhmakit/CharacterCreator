@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
 // Item editor used for (a) reusable custom item definitions/templates and (b) individual inventory instances.
 import { useMemo, useState } from 'react';
@@ -55,11 +56,12 @@ export function itemSummary(i: ItemDefinition): string {
 
 export function ItemRow({ item, onClick, action, extra }: { item: ItemDefinition; onClick?: () => void; action?: string; extra?: React.ReactNode }) {
   const db = useDb();
+  const un = useUnits();
   return (
     <div className="list-row clickable" onClick={onClick}>
       <span className="grow">
         <b>{item.name}</b> {item.magical && <span className="badge magic">{RARITY_LABEL[item.rarity]}</span>} {item.attunement?.required && <span className="badge" title={item.attunement.restriction}>attune</span>} {db.isCustom('item', item.id) && <span className="badge custom">custom</span>}
-        <div className="small muted">{ITEM_CATEGORY_LABEL[item.category] ?? item.category}{item.type && item.type !== ITEM_CATEGORY_LABEL[item.category] ? ` · ${item.type}` : ''}{itemSummary(item) ? ` · ${itemSummary(item)}` : ''}</div>
+        <div className="small muted">{ITEM_CATEGORY_LABEL[item.category] ?? item.category}{item.type && item.type !== ITEM_CATEGORY_LABEL[item.category] ? ` · ${item.type}` : ''}{itemSummary(item) ? ` · ${un.text(itemSummary(item))}` : ''}</div>
       </span>
       {extra}
       {action && <button className="small" onClick={(e) => { e.stopPropagation(); onClick?.(); }}>{action}</button>}

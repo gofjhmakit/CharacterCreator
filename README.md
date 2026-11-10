@@ -12,6 +12,10 @@ Deployable to GitHub Pages or any static host.
 - **Ability scores**: 27-point buy (live budget and validation), standard array (assign/swap), 3d6 and 4d6-drop-lowest. Rolling shows individual dice, greys out the dropped die, and supports unlimited rerolls, per-score rerolls, locking and reassignment. Manual entry is also available. Base scores are kept separate from bonuses.
 - **Rules engine with explanations**: every derived number has a breakdown (“why is my AC 17?”). This covers abilities, saves, skills (proficiency, expertise, Jack of All Trades, Remarkable Athlete), passive scores, initiative, AC (competing calculation methods; the best valid one wins and they never stack), HP, speed modes, senses, resistances, immunities, vulnerabilities, carrying capacity and push/drag/lift, attacks, spell DC and spell attack.
 - **Combat dashboard / session view**: quick damage (typed, with resistance/immunity/vulnerability, temp HP first, massive-damage death, damage at 0 HP), healing, temp HP (non-stacking), Hit Dice, death saves (nat 20 / nat 1 rules), all 14 conditions plus exhaustion with their mechanical effects, inspiration, concentration, and temporary buffs (Bless, Haste, Shield, Mage Armor, cover…).
+- **Undo**: damage, healing, rests, casting, slot and resource use, item use, equipping, conditions and level changes can be undone (header button, notification action, or Ctrl/Cmd+Z). History is per character and kept in memory for the session.
+- **Concentration checks**: taking damage while concentrating prompts a CON save (DC 10 or half the damage). It includes your situational bonuses (e.g. War Caster), and a failure ends the concentration effect. Dropping to 0 HP ends concentration automatically.
+- **Situational dice**: Bless (+1d4), Bane (−1d4), Guidance, Resistance and Bardic Inspiration (d6–d12) add their dice automatically to the right rolls and show them separately. One-roll buffs are removed after use.
+- **Companions & forms**: cards for familiars, beast companions, Wild Shape forms, summons and mounts, with HP, temp HP, AC, speed, rollable checks and attacks, and conditions. Start from 106 SRD creature templates (all beasts plus common familiars and summons, with Wild Shape CR limits by druid level) or from scratch.
 - **Resources and rests**: Rage, Ki, Bardic Inspiration (recharge changes at level 5), Channel Divinity, Wild Shape, Superiority Dice, Sorcery Points, Lay on Hands, Arcane Recovery and many more. Each uses its real recharge rule (short / long / dawn / none) and can have its maximum overridden for house rules. Short and long rests restore exactly what the rules say, item charges recharge at dawn with a dice roll, and Pact Magic is tracked separately.
 - **Spellbook**: searchable spell browser filtered by **class list**. The default is your class’s list including subclass extras; you can switch to another class’s list or all spells. Spells outside your list are labelled “not a Cleric spell” but can still be added for homebrew. Also filters by level, school, casting time, concentration and ritual. Tracks known, prepared, always-prepared (domain/oath/circle), spellbook, innate/racial, feat and feature spells, plus favourites. A cast dialog spends a regular slot, a pact slot or an innate use, rolls attack/damage/healing, and tracks concentration. It also handles Flexible Casting (sorcery points ↔ slots) and Arcane Recovery.
 - **Spell slots**: full, half (rounded up when single-class), third and Pact Magic progressions, plus the PHB multiclass spellcaster table.
@@ -54,7 +58,7 @@ What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 | Backgrounds | 14 (13 listed + Custom) | Acolyte is SRD; others are summaries |
 | Feats | 58 | Grappler is SRD; others are summaries |
 | Spells | 319 SRD + 34 referenced non-SRD (summary only) | SRD 5.1 |
-| Items | 728 total: 237 mundane, 332 SRD magic items, 159 generated +1/+2/+3 weapons, armor, shields and ammunition | SRD 5.1 |
+| Items | 728 total: 237 mundane, 332 SRD magic items (175 with structured effects, 35 castable-spell items such as wands and staffs), 159 generated +1/+2/+3 weapons, armor, shields and ammunition | SRD 5.1 |
 
 **2024 content**
 
@@ -66,7 +70,7 @@ What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 | Backgrounds | 16 | 4 SRD 5.2 (Acolyte, Criminal, Sage, Soldier); 12 summaries |
 | Feats | 10 origin, 37 general, 10 fighting style, 7 epic boons | SRD 5.2 + summaries |
 | Spells | 339 SRD 5.2 + referenced summaries | SRD 5.2 |
-| Items | 579 (mundane with Weapon Mastery, magic items, +N variants) | SRD 5.2 |
+| Items | 579 (mundane with Weapon Mastery, magic items with 110 structured effects and 36 castable-spell items, +N variants) | SRD 5.2 |
 
 **Licensing.** SRD 5.1 and SRD 5.2 material © Wizards of the Coast LLC is used under
 [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode). The SRD data conversion is based on
@@ -160,7 +164,7 @@ Content packs can be shared as JSON (`kind: "content"` envelope). Custom content
 
 ## Testing
 
-`npm test` runs 127 tests (2014 and 2024) covering ability modifiers, point buy, standard array, dice generation (3d6 / 4d6 drop lowest, advantage, crits, halfling luck), proficiency progression, skills, expertise, JoAT, saves, initiative, AC (armor, Unarmored Defense, Draconic Resilience, shields, magic, stacking, overrides), HP and hit dice (rolled/average, multiclass, Tough, Dwarven Toughness), spell DC/attack, slot tables (full/half/third, multiclass, Pact Magic), class progression and subclass unlocking (including Twilight Domain levels 1/2/6), racial traits (Drow, Variant Human, Half-Elf), equipment and attacks (finesse, proficiency, Archery, Dueling, Rage, Martial Arts, Sneak Attack scaling, STR requirement), attunement limits, item effect activation/removal, conditions and exhaustion, rests, consumables, custom template/instance isolation, fuzzy search, import/export validation, migrations, content integrity (no broken references in bundled data) and persistence (IndexedDB via fake-indexeddb).
+`npm test` runs 133 tests (2014 and 2024) covering ability modifiers, point buy, standard array, dice generation (3d6 / 4d6 drop lowest, advantage, crits, halfling luck), proficiency progression, skills, expertise, JoAT, saves, initiative, AC (armor, Unarmored Defense, Draconic Resilience, shields, magic, stacking, overrides), HP and hit dice (rolled/average, multiclass, Tough, Dwarven Toughness), spell DC/attack, slot tables (full/half/third, multiclass, Pact Magic), class progression and subclass unlocking (including Twilight Domain levels 1/2/6), racial traits (Drow, Variant Human, Half-Elf), equipment and attacks (finesse, proficiency, Archery, Dueling, Rage, Martial Arts, Sneak Attack scaling, STR requirement), attunement limits, item effect activation/removal, conditions and exhaustion, rests, consumables, custom template/instance isolation, fuzzy search, import/export validation, migrations, content integrity (no broken references in bundled data) and persistence (IndexedDB via fake-indexeddb).
 
 `npm run screenshots` drives the built app in Chrome. It creates a character through the wizard, takes damage and heals, adds items via fuzzy search, creates a custom item from a template, rests, rolls dice and reloads to verify persistence. It then visits every tab at 375 px, 820 px, 1280 px, 1440 px and 2560 px, checking for console errors and horizontal overflow.
 
@@ -184,11 +188,11 @@ Content packs can be shared as JSON (`kind: "content"` envelope). Custom content
 - Situational bonuses that add dice to d20 rolls (Bless, Bardic Inspiration, Guidance) are listed with the roll result rather than rolled automatically.
 - Starting equipment “any martial weapon” placeholders are resolved with dropdowns; the bundle choice for Cleric’s “warhammer (if proficient)” is not proficiency-checked.
 - Wizard “Spells” step lists spells to add; spells for higher-level characters created directly at level > 1 must be picked manually up to the shown limits (the limits and warnings are computed).
-- Metric units: only a preference stub (rules values remain imperial).
+- Metric units are display-only (speeds, ranges, senses, weights). Spell and item description text stays as written.
 
 **Not yet implemented**
 - Converting an existing character between rulesets (create a new one instead).
-- Companion/familiar/summon stat blocks and mounted combat tracking.
+- Mounted combat rules (companion cards track mounts, but mounted-combat mechanics are manual).
 - Artificer class (not in the requested list; the `half-up` progression is implemented for when it’s added as custom content).
 - Cloud sync (intentionally out of scope: no backend).
 

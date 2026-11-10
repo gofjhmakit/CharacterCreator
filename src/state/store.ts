@@ -13,7 +13,10 @@ import type { RulesetId } from '@/types/core';
 
 export type SaveState = { status: 'saved' | 'pending' | 'saving' | 'error'; error?: string; at?: number };
 
-export interface Toast { id: string; kind: 'info' | 'success' | 'error' | 'roll'; text: string; detail?: string }
+export interface Toast { id: string; kind: 'info' | 'success' | 'error' | 'roll'; text: string; detail?: string; action?: { label: string; run: () => void } }
+
+export interface UndoEntry { label: string; snapshot: Character; at: number }
+const UNDO_LIMIT = 25;
 
 export interface AppPrefs {
   theme: 'dark' | 'light' | 'system';
@@ -41,13 +44,16 @@ interface AppState {
   dbs: Record<RulesetId, ContentDB>;
   rolls: RollResult[];
   toasts: Toast[];
+  /** Per-character undo history of labelled play actions (most recent last). In memory only. */
+  history: Record<string, UndoEntry[]>;
   prefs: AppPrefs;
   diceOpen: boolean;
 
   init(): Promise<void>;
   createCharacter(partial?: Partial<Character>): string;
-  update(id: string, recipe: (draft: Character) => void): void;
-  replace(c: Character): void;
+  update(id: string, recipe: (draft: Character) => void, undoLabel?: string): void;
+  replace(c: Character, undoLabel?: string): void;
+  undo(id: string): string | undefined;
   remove(id: string): Promise<void>;
   duplicate(id: string): string | undefined;
   flush(id?: string): Promise<void>;
@@ -80,6 +86,7 @@ export const useApp = create<AppState>((set, get) => ({
   dbs: buildDbs([]),
   rolls: [],
   toasts: [],
+  history: {},
   prefs: loadPrefs(),
   diceOpen: false,
 
@@ -119,20 +126,31 @@ export const useApp = create<AppState>((set, get) => ({
     return c.id;
   },
 
-  update(id, recipe) {
+  update(id, recipe, undoLabel) {
     const cur = get().characters[id];
     if (!cur) return;
     const draft = structuredClone(cur);
     recipe(draft);
     draft.updatedAt = new Date().toISOString();
-    set((s) => ({ characters: { ...s.characters, [id]: draft } }));
+    set((s) => ({ characters: { ...s.characters, [id]: draft }, ...(undoLabel ? { history: pushHistory(s.history, id, undoLabel, cur) } : {}) }));
     schedule(id);
   },
 
-  replace(c) {
+  replace(c, undoLabel) {
+    const prev = get().characters[c.id];
     const next = { ...c, updatedAt: new Date().toISOString() };
-    set((s) => ({ characters: { ...s.characters, [c.id]: next } }));
+    set((s) => ({ characters: { ...s.characters, [c.id]: next }, ...(undoLabel && prev ? { history: pushHistory(s.history, c.id, undoLabel, prev) } : {}) }));
     schedule(c.id);
+  },
+
+  undo(id) {
+    const list = get().history[id] ?? [];
+    const last = list[list.length - 1];
+    if (!last) return undefined;
+    const restored = { ...last.snapshot, updatedAt: new Date().toISOString() };
+    set((s) => ({ characters: { ...s.characters, [id]: restored }, history: { ...s.history, [id]: list.slice(0, -1) } }));
+    schedule(id);
+    return last.label;
   },
 
   async remove(id) {
@@ -196,6 +214,11 @@ export const useApp = create<AppState>((set, get) => ({
   },
   setDiceOpen(v) { set({ diceOpen: v }); },
 }));
+
+function pushHistory(h: Record<string, UndoEntry[]>, id: string, label: string, snapshot: Character): Record<string, UndoEntry[]> {
+  const list = [...(h[id] ?? []), { label, snapshot, at: Date.now() }].slice(-UNDO_LIMIT);
+  return { ...h, [id]: list };
+}
 
 function schedule(id: string) {
   const st = useApp.getState();

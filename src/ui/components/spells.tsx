@@ -1,3 +1,4 @@
+import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
 import { useMemo, useState } from 'react';
 import type { SpellDef } from '@/types/content';
@@ -12,11 +13,12 @@ export const SCHOOLS = ['abjuration', 'conjuration', 'divination', 'enchantment'
 export const lvlLabel = (l: number) => (l === 0 ? 'Cantrip' : `${l}${l === 1 ? 'st' : l === 2 ? 'nd' : l === 3 ? 'rd' : 'th'} level`);
 
 export function SpellMeta({ s }: { s: SpellDef }) {
+  const un = useUnits();
   return (
     <dl className="kv">
       <dt>Level</dt><dd>{lvlLabel(s.level)} {titleCase(s.school)}{s.ritual ? ' (ritual)' : ''}</dd>
       <dt>Casting time</dt><dd>{s.castingTime}</dd>
-      <dt>Range</dt><dd>{s.range}</dd>
+      <dt>Range</dt><dd>{un.text(s.range)}</dd>
       <dt>Components</dt><dd>{[s.components.v && 'V', s.components.s && 'S', s.components.m && 'M'].filter(Boolean).join(', ')}{s.components.material ? ` (${s.components.material})` : ''}</dd>
       <dt>Duration</dt><dd>{s.concentration ? 'Concentration, ' : ''}{s.duration}</dd>
       {s.attack && <><dt>Attack</dt><dd>{titleCase(s.attack)} spell attack</dd></>}

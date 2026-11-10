@@ -10,6 +10,8 @@ import { ABILITIES, ABILITY_NAMES, ALIGNMENTS, abilityMod, signed, XP_THRESHOLDS
 import { Field, NumberField, titleCase, Empty } from '../components/common';
 import { ChoiceEditor, choiceComplete } from '../components/ChoiceEditor';
 import { AbilityGenerator } from './AbilityGenerator';
+import { averageOfDie, rollDie } from '@/dice/dice';
+import { maxSpellLevelForClass } from '@/engine/spellSlots';
 import { validatePointBuy, validateStandardArray } from '@/engine/abilityGen';
 import { EquipmentStep } from './EquipmentStep';
 import { SpellPicker, addClassSpell } from '../components/spells';
@@ -206,7 +208,17 @@ function ClassStep({ ch, d, set }: StepProps) {
             {def.spellcasting && <><dt>Spellcasting</dt><dd>{ABILITY_NAMES[def.spellcasting.ability]}, {def.spellcasting.progression} caster, {def.spellcasting.style}</dd></>}
             <dt>{def.subclassLabel}</dt><dd>at level {def.subclassLevel}</dd>
           </dl>
-          <Field label="Class level"><NumberField className="" value={cur.level} min={1} max={20} onChange={(v) => set((x) => { x.classes[0].level = v; })} /></Field>
+          <Field label="Class level"><NumberField className="" value={cur.level} min={1} max={20} onChange={(v) => set((x) => { x.classes[0].level = v; x.classes[0].hpRolls = x.classes[0].hpRolls.slice(0, v - 1); })} /></Field>
+          {cur.level > 1 && (
+            <div className="stack">
+              <span className="section-label">Hit points for levels 2–{cur.level}</span>
+              <div className="row">
+                <button className={`small ${cur.hpRolls.every((x) => x == null) ? 'on' : ''}`} onClick={() => set((x) => { x.classes[0].hpRolls = []; })}>Average ({averageOfDie(def.hitDie)} per level)</button>
+                <button className={`small ${cur.hpRolls.some((x) => x != null) ? 'on' : ''}`} onClick={() => set((x) => { x.classes[0].hpRolls = Array.from({ length: cur.level - 1 }, () => rollDie(def.hitDie)); })}>{cur.hpRolls.some((x) => x != null) ? 'Reroll all' : `Roll d${def.hitDie} for each level`}</button>
+              </div>
+              {cur.hpRolls.some((x) => x != null) && <div className="row tight">{cur.hpRolls.map((v, i) => <span key={i} className="die-face" title={`Level ${i + 2}`}>{v ?? averageOfDie(def.hitDie)}</span>)}<span className="small muted">(+ CON modifier each; edit later on the Progression tab)</span></div>}
+            </div>
+          )}
           <div><span className="section-label">Features up to level {cur.level}</span>
             {def.features.filter((f) => (f.level ?? 1) <= cur.level && !f.hidden).map((f) => <div key={f.id} className="feature"><div className="feature-head"><h4>{f.name}</h4><span className="chip">Lvl {f.level}</span></div><div className="feature-desc clamp">{f.description}</div></div>)}
           </div>
@@ -304,14 +316,15 @@ function AbilityStep({ ch, d, set }: StepProps) {
 
 function ChoicesStep({ ch, d, set }: StepProps) {
   const groups = new Map<string, ChoiceView[]>();
-  for (const cv of d.choices) {
+  const ordered = [...d.choices].sort((a, b) => (a.level ?? 0) - (b.level ?? 0));
+  for (const cv of ordered) {
     const label = cv.source.kind === 'race' || cv.source.kind === 'subrace' ? 'Race' : cv.source.kind === 'background' ? 'Background' : `${cv.source.label}`;
     if (!groups.has(label)) groups.set(label, []);
     groups.get(label)!.push(cv);
   }
   return (
     <div className="stack lg">
-      <p className="ink2">All choices granted by your race, background, class and features at your current level. Items with a red marker are required.</p>
+      <p className="ink2">All choices granted by your {d.rules.terms.race.toLowerCase()}, background, class and features up to your current level, in level order. Items with a red marker are required.{d.totalLevel > 1 ? ' Ability Score Improvements for each ASI level are listed under your class.' : ''}</p>
       {[...groups.entries()].map(([label, cvs]) => (
         <div key={label} className="stack">
           <span className="section-label">{label}</span>
@@ -351,6 +364,7 @@ function SpellsStep({ ch, d, set }: StepProps) {
         {cv.style !== 'known' && <span className="chip">Prepare {cv.preparedLimit} per day (set on the Spells tab)</span>}
         <span className="chip">Max spell level {cv.maxSpellLevel}</span>
       </div>
+      <SpellGuidance cv={cv} ch={ch} />
       {cv.style === 'prepared' && <p className="small ink2">{cv.name}s prepare from the whole class list each day — you don’t need to add spells now. Add your usual prepared spells for convenience if you like.</p>}
       <SpellPicker ch={ch} d={d} cv={cv} onAdd={(s) => set((c) => addClassSpell(c, s, cv))} onRemove={(s) => set((c) => { c.spells.entries = c.spells.entries.filter((e) => !(e.spellId === s.id && e.classId === cv.classId)); })} />
     </div>
@@ -412,3 +426,31 @@ function ReviewStep({ ch, d, set, goStep }: StepProps) {
 }
 
 export { useMemo };
+
+/** Level-by-level checklist of what a caster created above level 1 should have picked. */
+function SpellGuidance({ cv, ch }: { cv: Derived['casters'][number]; ch: Character }) {
+  const db = useDb();
+  if (cv.classLevel <= 1 && cv.style !== 'spellbook') return null;
+  const mine = ch.spells.entries.filter((e) => e.classId === cv.classId).map((e) => db.spells.get(e.spellId)).filter(Boolean);
+  const byLvl = (l: number) => mine.filter((x) => x!.level === l).length;
+  const levels = Array.from({ length: cv.maxSpellLevel }, (_, i) => i + 1);
+  const rows: { label: string; detail: string }[] = [];
+  if (cv.style === 'spellbook') {
+    const start = cv.progression === 'full' ? 6 : 0;
+    rows.push({ label: `Level 1`, detail: `${start} spells of 1st level` });
+    for (let l = 2; l <= cv.classLevel; l++) rows.push({ label: `Level ${l}`, detail: `2 spells of up to level ${maxSpellLevelForClass(cv.progression, l)}` });
+  }
+  return (
+    <div className="panel" style={{ background: 'var(--bg-2)' }}>
+      <span className="section-label">Guidance for a level {cv.classLevel} {cv.name}</span>
+      <div className="small">
+        {cv.cantripsKnown !== undefined && <div>Cantrips: pick {cv.cantripsKnown} (you have {byLvl(0)}).</div>}
+        {cv.style === 'known' && cv.spellsKnown !== undefined && <div>Spells known: {cv.spellsKnown}, each of level 1–{cv.maxSpellLevel}.</div>}
+        {cv.style === 'prepared' && <div>Prepare up to {cv.preparedLimit} spells of level 1–{cv.maxSpellLevel} each day (from the whole {cv.name} list).</div>}
+        {cv.style === 'spellbook' && <div>Spellbook: at least {cv.spellbookMin} spells (6 at level 1, then 2 per level, each of a level you can cast). Prepare {cv.preparedLimit} of them.</div>}
+        <div className="row tight" style={{ marginTop: 6 }}>{levels.map((l) => <span key={l} className="chip">L{l}: {byLvl(l)}</span>)}</div>
+        {rows.length > 1 && <details style={{ marginTop: 6 }}><summary>Spellbook by wizard level</summary>{rows.map((r) => <div key={r.label}>{r.label}: {r.detail}</div>)}</details>}
+      </div>
+    </div>
+  );
+}

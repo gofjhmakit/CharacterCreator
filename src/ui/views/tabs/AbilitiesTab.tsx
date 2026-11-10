@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { TabProps } from '../CharacterView';
 import { ABILITIES, ABILITY_NAMES, SKILLS, SKILL_IDS, signed, ALL_TOOLS, STANDARD_LANGUAGES, EXOTIC_LANGUAGES, type SkillId, type Ability } from '@/types/core';
-import { useRoller } from '../../components/roll';
+import { useRoller, fmtBonus } from '../../components/roll';
 import { Modal, BreakdownView, titleCase } from '../../components/common';
 import { AbilityBoxes, StatStrip } from './OverviewTab';
 import type { Breakdown } from '@/engine/derive';
@@ -24,7 +24,7 @@ export function AbilitiesTab({ ch, d, set }: TabProps) {
             <div key={a} className="skill-row" onClick={() => setInfo({ title: `${ABILITY_NAMES[a]} saving throw`, b: d.saves[a], sources: d.saves[a].profSources })}>
               <span className={`prof-mark ${d.saves[a].proficient ? 'p1' : ''}`} />
               <span>{ABILITY_NAMES[a]}{d.saves[a].mode !== 'normal' && <span className={d.saves[a].mode === 'advantage' ? 'good' : 'bad'}> ({d.saves[a].mode.slice(0, 3)}.)</span>}{d.saves[a].conditional.length > 0 && <span className="muted"> *</span>}</span>
-              <span className="bonus">{signed(d.saves[a].total)}</span>
+              <span className="bonus">{fmtBonus(d.saves[a])}</span>
               <button className="small" onClick={(e) => { e.stopPropagation(); roller.d20(`${ABILITY_NAMES[a]} save`, d.saves[a], 'save', { halflingLucky: lucky }); }}>Roll</button>
             </div>
           ))}
@@ -38,7 +38,7 @@ export function AbilitiesTab({ ch, d, set }: TabProps) {
               <div key={s} className="skill-row" onClick={() => setInfo({ title: `${SKILLS[s].name} (${SKILLS[s].ability.toUpperCase()})`, b: sk, sources: sk.profSources })}>
                 <span className={`prof-mark ${profClass(sk.prof)}`} />
                 <span>{SKILLS[s].name} <span className="muted small">{SKILLS[s].ability.toUpperCase()}</span>{sk.mode !== 'normal' && <span className={sk.mode === 'advantage' ? 'good' : 'bad'}> ({sk.mode.slice(0, 3)}.)</span>}{sk.conditional.length > 0 && <span className="muted"> *</span>}</span>
-                <span className="bonus">{signed(sk.total)}</span>
+                <span className="bonus">{fmtBonus(sk)}</span>
                 <button className="small" onClick={(e) => { e.stopPropagation(); roller.d20(`${SKILLS[s].name} check`, sk, 'check', { halflingLucky: lucky, minRoll: reliable && sk.prof >= 1 ? 10 : undefined }); }}>Roll</button>
               </div>
             );

@@ -28,7 +28,7 @@ export interface SourceRef {
   label: string;
 }
 
-export interface Part { label: string; value: number; source?: SourceRef }
+export interface Part { label: string; value: number; source?: SourceRef; /** extra dice rolled with the test, e.g. '1d4' or '-1d4' */ dice?: string }
 export interface CondPart { label: string; value?: number; op?: string; condition: string; source?: SourceRef }
 export interface AdvSource { label: string; source?: SourceRef }
 
@@ -594,6 +594,13 @@ export function derive(ch: Character, db: ContentDB): Derived {
   const shieldWorn = equippedShields.sort((a, b) => (b.item.armor!.baseAc + (b.item.armor!.bonus ?? 0)) - (a.item.armor!.baseAc + (a.item.armor!.bonus ?? 0)))[0];
   if (equippedArmor.length > 1) warnings.push('More than one suit of armor is equipped; only the best one counts.');
   if (equippedShields.length > 1) warnings.push('More than one shield is equipped; only one counts.');
+  {
+    const hands = inv.filter((i) => i.equipped && (i.item.weapon || i.item.armor?.category === 'shield'))
+      .reduce((s, i) => s + (i.item.armor?.category === 'shield' ? 1 : i.item.weapon!.properties.includes('two-handed') ? 2 : 1), 0);
+    if (hands > 2) warnings.push(`Weapons and shields equipped need ${hands} hands (you have 2). Unequip something on the Inventory tab.`);
+    const rings = inv.filter((i) => i.equipped && i.item.category === 'ring').length;
+    if (rings > 2) warnings.push(`${rings} rings are equipped; only two can be worn.`);
+  }
   const equippedWeapons = inv.filter((i) => i.equipped && i.item.weapon);
 
   const reqCtx = { armorWorn, shieldWorn, equippedWeapons };
@@ -712,7 +719,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
       }
       if (op === 'advantage') b.advantage.push({ label, source: m.source });
       else if (op === 'disadvantage') b.disadvantage.push({ label, source: m.source });
-      else if (op === 'add') { const v = modValue(m, vars(ownerOf(m))); if (v) b.parts.push({ label, value: v, source: m.source }); }
+      else if (op === 'add') { const v = modValue(m, vars(ownerOf(m))); if (v || m.mod.dice) b.parts.push({ label, value: v, source: m.source, ...(m.mod.dice ? { dice: m.mod.dice } : {}) }); }
     }
   };
 
@@ -1403,7 +1410,7 @@ function computeAttacks(c: AttackCtx): AttackView[] {
       if (m.mod.condition) { atk.conditional.push({ label: m.effectName, value: op === 'add' ? c.modValue(m) : undefined, op, condition: m.mod.condition, source: m.source }); continue; }
       if (op === 'advantage') atk.advantage.push({ label: m.effectName, source: m.source });
       else if (op === 'disadvantage') atk.disadvantage.push({ label: m.effectName, source: m.source });
-      else if (op === 'add') atk.parts.push({ label: m.effectName, value: c.modValue(m), source: m.source });
+      else if (op === 'add') atk.parts.push({ label: m.effectName, value: c.modValue(m), source: m.source, ...(m.mod.dice ? { dice: m.mod.dice } : {}) });
     }
     finalizeBreakdown(atk);
     const dmg = emptyBreakdown();

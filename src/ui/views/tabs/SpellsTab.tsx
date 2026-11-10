@@ -109,7 +109,7 @@ export function SpellsTab({ ch, d, set, replace }: TabProps) {
               const next = arcaneRecovery(ch, wizLvl, levels);
               if (!next) { toast({ kind: 'error', text: `Invalid selection (max combined level ${Math.ceil(wizLvl / 2)}, no 6th+).` }); return; }
               next.resources['arcane-recovery'] = { ...(next.resources['arcane-recovery'] ?? {}), used: 1 };
-              replace(next); toast({ kind: 'success', text: 'Arcane Recovery used.' });
+              replace(next, 'Arcane Recovery'); toast({ kind: 'success', text: 'Arcane Recovery used.' });
             }} />}
           </div>
         )}
@@ -264,8 +264,8 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
         if (s.entry?.uses) { const e = c.spells.entries.find((x) => x.id === s.entry!.id); if (e?.uses) e.uses.used += 1; }
         else if (s.uses.resourceId) c.resources[s.uses.resourceId] = { ...(c.resources[s.uses.resourceId] ?? {}), used: (c.resources[s.uses.resourceId]?.used ?? 0) + 1 };
       }
-      if (sp.concentration) { c.combat.concentration = sp.name; }
-    });
+      if (sp.concentration) { c.combat.concentration = sp.name; c.effects = c.effects.filter((x) => !x.concentration); }
+    }, `Cast ${sp.name}`);
     toast({ kind: 'success', text: `Cast ${sp.name}${sp.level > 0 ? ` at level ${castLevel}` : ''}.`, detail: sp.concentration ? `Concentrating on ${sp.name}${ch.combat.concentration && ch.combat.concentration !== sp.name ? ` (ended ${ch.combat.concentration})` : ''}.` : undefined });
     onClose();
   };

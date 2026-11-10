@@ -82,9 +82,42 @@ export interface TemporaryEffect {
   name: string;
   effect: Effect;
   duration?: string;
+  /** Removed automatically after the first roll that uses its dice (Guidance, Bardic Inspiration). */
+  oneShot?: boolean;
   /** Concentration source */
   concentration?: boolean;
   createdAt: string;
+}
+
+export interface CompanionAttack { name: string; bonus: number; damage: string; damageType?: string; notes?: string }
+
+/** Familiar, beast companion, Wild Shape form, summon, mount… tracked alongside the character. */
+export interface Companion {
+  id: string;
+  name: string;
+  kind: 'familiar' | 'companion' | 'wild-shape' | 'summon' | 'mount' | 'other';
+  /** Template it was created from (SRD creature id), for reference. */
+  templateId?: string;
+  size?: string;
+  creatureType?: string;
+  cr?: string;
+  ac: number;
+  hpMax: number;
+  hpCurrent: number;
+  hpTemp: number;
+  speed: string;
+  abilities: Record<'str' | 'dex' | 'con' | 'int' | 'wis' | 'cha', number>;
+  /** Proficiency bonus used for its saves/skills shown (usually its own; some companions use yours). */
+  proficiency?: number;
+  saves?: string;
+  skills?: string;
+  senses?: string;
+  attacks: CompanionAttack[];
+  traits?: string;
+  notes?: string;
+  conditions: string[];
+  /** Wild Shape form currently assumed / summon currently present. */
+  active: boolean;
 }
 
 export interface NoteEntry {
@@ -232,6 +265,7 @@ export interface Character {
   inventory: InventoryItem[];
   currency: { cp: number; sp: number; ep: number; gp: number; pp: number };
   effects: TemporaryEffect[];
+  companions: Companion[];
   notes: Record<NoteCategory, NoteEntry[]> & { general: string };
   settings: CharacterSettings;
 

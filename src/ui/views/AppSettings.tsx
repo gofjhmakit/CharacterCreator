@@ -27,7 +27,7 @@ export function AppSettings() {
         <h3>Appearance</h3>
         <div className="field-row">
           <Field label="Theme"><select value={prefs.theme} onChange={(e) => setPrefs({ theme: e.target.value as 'dark' })}><option value="system">Follow system</option><option value="dark">Dark (charcoal)</option><option value="light">Light (parchment)</option></select></Field>
-          <Field label="Units" hint="Rules values stay in feet/pounds; metric shown as a hint where relevant."><select value={prefs.units} onChange={(e) => setPrefs({ units: e.target.value as 'imperial' })}><option value="imperial">Imperial (ft, lb)</option><option value="metric">Metric hints</option></select></Field>
+          <Field label="Units" hint="Display only: speeds, ranges, senses and weights. 5 ft = 1.5 m, 1 lb ≈ 0.5 kg. Spell and item text stays as written."><select value={prefs.units} onChange={(e) => setPrefs({ units: e.target.value as 'imperial' })}><option value="imperial">Imperial (ft, lb)</option><option value="metric">Metric (m, kg)</option></select></Field>
         </div>
       </div>
       <div className="panel stack">

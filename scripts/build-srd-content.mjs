@@ -7,7 +7,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CURATED, ac, eff, ATT, EQ } from './curated-items.mjs';
+import { CURATED, CURATED_SPELLS, ac, eff, ATT, EQ } from './curated-items.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(root, 'vendor', 'srd-5e-database');
@@ -223,7 +223,7 @@ function parseAttunement(first) {
 }
 
 function parseCharges(text) {
-  const m = text.match(/has (\d+) charges/i);
+  const m = text.match(/(?:has|have|of its) (\d+) charges/i);
   if (!m) return null;
   const max = Number(m[1]);
   const r = text.match(/regains? ([0-9d+\s]+?) expended charges? (daily at dawn|at dawn|each dawn)/i)
@@ -295,6 +295,7 @@ for (const m of magic) {
   const ch = parseCharges(body);
   if (ch) it.charges = ch;
   if (CURATED[m.index]) it.effects = CURATED[m.index].map((e) => ({ ...e, id: `${m.index}--${e.id}` }));
+  if (CURATED_SPELLS[m.index]) it.spells = CURATED_SPELLS[m.index].filter((x) => spells.some((s) => s.id === x.spellId));
   const rm = m.index.match(/^(ring|armor|potion)-of-resistance-([a-z]+)$/);
   const rt = rm ? rm[2] : null;
   if (rt) {

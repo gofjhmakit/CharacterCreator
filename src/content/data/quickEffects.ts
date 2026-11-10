@@ -2,7 +2,7 @@
 import type { Effect } from '@/types/content';
 import { mod, adv, grant } from './helpers';
 
-export interface QuickEffect { id: string; name: string; description: string; concentration?: boolean; effect: Effect }
+export interface QuickEffect { id: string; name: string; description: string; concentration?: boolean; oneShot?: boolean; effect: Effect }
 
 const q = (id: string, name: string, description: string, modifiers: Effect['modifiers'], concentration = false, extra: Partial<Effect> = {}): QuickEffect => ({ id, name, description, concentration, effect: { id: `qe-${id}`, name, modifiers, ...extra } });
 
@@ -12,9 +12,11 @@ export const QUICK_EFFECTS: QuickEffect[] = [
   q('shield-of-faith', 'Shield of Faith', '+2 AC (concentration, 10 minutes).', [mod('ac', 2)], true),
   q('haste', 'Haste', '+2 AC, advantage on DEX saves, doubled speed, extra action (concentration).', [mod('ac', 2), adv('save:dex'), mod('speed:walk', 'walk')], true),
   q('barkskin', 'Barkskin', "AC can't be lower than 16 (concentration).", [mod('ac-formula', undefined, { acFormula: { label: 'Barkskin (min 16)', base: 16, abilities: [], allowsArmor: true, allowsShield: false } })], true),
-  q('bless', 'Bless', 'Add 1d4 to attack rolls and saving throws (concentration).', [mod('attack', 0, { condition: '+1d4 to the roll (Bless)' }), mod('save:all', 0, { condition: '+1d4 to the roll (Bless)' })], true),
-  q('bane', 'Bane (affected)', 'Subtract 1d4 from attack rolls and saving throws.', [mod('attack', 0, { condition: '−1d4 to the roll (Bane)' }), mod('save:all', 0, { condition: '−1d4 to the roll (Bane)' })]),
-  q('guidance', 'Guidance', 'Add 1d4 to one ability check (concentration).', [mod('check:all', 0, { condition: '+1d4 to one check (Guidance)' })], true),
+  q('bless', 'Bless', 'Add 1d4 to attack rolls and saving throws (concentration). Rolled automatically.', [mod('attack', 0, { dice: '1d4' }), mod('save:all', 0, { dice: '1d4' })], true),
+  q('bane', 'Bane (affected)', 'Subtract 1d4 from attack rolls and saving throws. Rolled automatically.', [mod('attack', 0, { dice: '-1d4' }), mod('save:all', 0, { dice: '-1d4' })]),
+  { ...q('guidance', 'Guidance', 'Add 1d4 to your next ability check. Used up by that roll.', [mod('check:all', 0, { dice: '1d4' })]), oneShot: true },
+  { ...q('resistance-cantrip', 'Resistance', 'Add 1d4 to your next saving throw. Used up by that roll.', [mod('save:all', 0, { dice: '1d4' })]), oneShot: true },
+  ...[6, 8, 10, 12].map((n) => ({ ...q(`bardic-inspiration-d${n}`, `Bardic Inspiration (d${n})`, `Add 1d${n} to your next ability check, attack roll, or saving throw. Used up by that roll.`, [mod('attack', 0, { dice: `1d${n}` }), mod('save:all', 0, { dice: `1d${n}` }), mod('check:all', 0, { dice: `1d${n}` })]), oneShot: true })),
   q('longstrider', 'Longstrider', '+10 ft walking speed (1 hour).', [mod('speed:walk', 10)]),
   q('enlarge', 'Enlarge', 'Advantage on STR checks and saves; weapons deal +1d4 damage (concentration).', [adv('check:str'), adv('save:str'), mod('extra-damage', '1d4', { scope: 'weapon' })], true),
   q('reduce', 'Reduce (affected)', 'Disadvantage on STR checks and saves; weapons deal −1d4 damage.', [{ target: 'check:str', op: 'disadvantage' }, { target: 'save:str', op: 'disadvantage' }]),

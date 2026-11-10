@@ -81,6 +81,8 @@ export interface Modifier {
   op?: ModifierOp;               // default 'add'
   value?: number | string;       // number, formula string, or dice string for extra-damage
   formula?: Formula;             // evaluated value (takes precedence over numeric value)
+  /** Extra dice added to the roll (Bless "1d4", Bane "-1d4"). Rolled automatically with d20 tests. */
+  dice?: string;
   damageType?: DamageType;
   acFormula?: AcFormula;
   scope?: AttackScope;

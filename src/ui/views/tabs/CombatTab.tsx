@@ -1,6 +1,7 @@
 import type { TabProps } from '../CharacterView';
 import { HpPanel, ConditionsPanel, ResourcesPanel, TogglesPanel, SlotsPanel, AttacksPanel, RestButtons, QuickEffectsPanel, SavesMini, DefensesPanel } from '../panels';
 import { StatStrip } from './OverviewTab';
+import { CompanionsPanel } from '../Companions';
 import { BreakdownView } from '../../components/common';
 
 export function CombatTab(p: TabProps) {
@@ -29,6 +30,7 @@ export function CombatTab(p: TabProps) {
           <ResourcesPanel {...p} />
           <SlotsPanel {...p} />
           <QuickEffectsPanel ch={ch} set={p.set} />
+          <CompanionsPanel ch={ch} d={d} set={p.set} />
           {d.manual.length > 0 && <div className="panel"><div className="panel-title"><h3>Manual effects</h3></div>{d.manual.map((m, i) => <div key={i} className="small"><b>{m.name}</b>: {m.description}</div>)}</div>}
         </div>
       </div>

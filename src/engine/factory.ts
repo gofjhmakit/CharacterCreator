@@ -45,6 +45,7 @@ export function newCharacter(partial: Partial<Character> = {}): Character {
     inventory: [],
     currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     effects: [],
+    companions: [],
     notes: emptyNotes(),
     settings: {
       encumbrance: 'standard',

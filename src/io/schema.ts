@@ -85,6 +85,12 @@ export function validateCharacter(raw: unknown): ValidationResult {
     if (!isObj(it.origin)) (it as Raw).origin = { kind: 'manual' };
     return true;
   });
+  // Companions
+  merged.companions = (merged.companions as unknown[]).filter((p, i) => {
+    const ok = isObj(p) && isStr(p.id) && isStr(p.name) && isNum(p.hpMax) && isObj(p.abilities);
+    if (!ok) warnings.push(`companions[${i}] is invalid and was removed.`);
+    return ok;
+  }).map((p) => ({ attacks: [], conditions: [], hpTemp: 0, active: true, speed: '', ac: 10, ...(p as Raw) }));
   // Spells
   merged.spells.entries = (merged.spells.entries as unknown[]).filter((e, i) => {
     const ok = isObj(e) && isStr(e.id) && isStr(e.spellId);
