@@ -5,6 +5,7 @@ import { go, href } from '../router';
 import { Modal, useConfirm, fmtDate, Empty } from '../components/common';
 import { exportCharacter, exportBackup, downloadJson, safeFilename } from '@/io/exportImport';
 import { ImportDialog } from './ImportDialog';
+import { downloadDmSim } from '@/io/dmSimExport';
 import type { Character } from '@/types/character';
 
 function Portrait({ c, size = '' }: { c: Character; size?: string }) {
@@ -91,6 +92,7 @@ export function CharacterList() {
                         <button className="small ghost" onClick={() => setRename(c)}>Rename</button>
                         <button className="small ghost" onClick={() => { duplicate(c.id); toast({ kind: 'success', text: 'Character duplicated.' }); }}>Duplicate</button>
                         <button className="small ghost" onClick={() => downloadJson(`${safeFilename(c.identity.name)}.json`, exportCharacter(c, dbs[c.ruleset] ?? dbs['dnd5e-2014']))}>Export</button>
+                        <button className="small ghost" title="Export in the DM Simulator (dnd_project) character sheet format" onClick={() => toast(downloadDmSim(c, dbs[c.ruleset] ?? dbs['dnd5e-2014']), 9000)}>DM Sim</button>
                         <button className="small ghost danger" onClick={() => del(c)}>Delete</button>
                       </div>
                     </td>
@@ -101,7 +103,7 @@ export function CharacterList() {
           </div>
         </div>
       )}
-      <p className="small muted">Characters are saved automatically in this browser (IndexedDB). Use <b>Export</b> or <b>Backup all</b> to move them between browsers or devices.</p>
+      <p className="small muted">Characters are saved automatically in this browser (IndexedDB). Use <b>Export</b> or <b>Backup all</b> to move them between browsers or devices, and <b>DM Sim</b> to get a sheet for the DM Simulator table app.</p>
       {rename && <RenameDialog c={rename} onClose={() => setRename(null)} onSave={(name) => { update(rename.id, (d) => { d.identity.name = name; }); setRename(null); }} />}
       {importing && importText !== null && <ImportDialog text={importText} onClose={() => { setImporting(false); setImportText(null); }} />}
       {node}

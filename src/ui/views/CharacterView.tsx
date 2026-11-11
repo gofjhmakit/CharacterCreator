@@ -8,6 +8,7 @@ import { IconBag, IconBook, IconHeart, IconMore, IconStar, IconSword, IconUser }
 import { Portrait } from './CharacterList';
 import type { Character } from '@/types/character';
 import { signed } from '@/types/core';
+import { downloadDmSim } from '@/io/dmSimExport';
 import { OverviewTab } from './tabs/OverviewTab';
 import { AbilitiesTab } from './tabs/AbilitiesTab';
 import { CombatTab } from './tabs/CombatTab';
@@ -81,6 +82,7 @@ export function CharacterView({ id, tab }: { id: string; tab: string }) {
           <span className="chip" title="Hit points">HP {Math.min(ch.combat.hpCurrent, d.hp.max)}/{d.hp.max}{ch.combat.hpTemp ? ` +${ch.combat.hpTemp}` : ''}</span>
           <span className="chip" title="Proficiency bonus">PB {signed(d.profBonus)}</span>
           <button className={`small ${ch.combat.inspiration ? 'on' : ''}`} onClick={() => set((c) => { c.combat.inspiration = !c.combat.inspiration; })} title="Inspiration">{ch.combat.inspiration ? '★' : '☆'} Inspiration</button>
+          <button className="small" title="Download this character as a DM Simulator (dnd_project) sheet" onClick={() => useApp.getState().toast(downloadDmSim(ch, db), 9000)}>Export for DM Sim</button>
         </div>
       </div>
       {ch.draft && <div className="notice" style={{ marginBottom: 10 }}>This character is still a draft. <a href={href('new', id)}>Continue the creation wizard</a>.</div>}
