@@ -5,7 +5,12 @@ import type { Breakdown, Part, CondPart } from '@/engine/derive';
 export function Modal({ title, onClose, children, footer, size }: { title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; size?: 'wide' | 'narrow' }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Only the topmost dialog closes (e.g. spell details opened from the level-up dialog).
+      const open = document.querySelectorAll('.modal');
+      if (open[open.length - 1] === ref.current) onClose();
+    };
     window.addEventListener('keydown', onKey);
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.querySelector<HTMLElement>('input, select, textarea, button:not(.close)')?.focus();

@@ -300,6 +300,15 @@ table.data td.num, table.data th.num { text-align: right; }
 .modal-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 @media (max-width: 600px) { .modal-back { padding: 0; place-items: end stretch; } .modal { width: 100%; max-height: 92vh; border-radius: 10px 10px 0 0; } }
 
+/* Spell hover preview (mouse only; touch uses the ⓘ details button) */
+.spell-hover { position: fixed; z-index: 100; pointer-events: none; background: var(--panel); border: 1px solid var(--line-2); border-left: 3px solid var(--gold); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; max-height: min(420px, calc(100vh - 24px)); overflow: hidden; }
+.spell-hover-title { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
+.spell-hover-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; color: var(--ink); }
+.spell-hover-meta b { color: var(--muted); font-weight: 700; margin-right: 4px; }
+.spell-hover-desc { font-size: 0.88rem; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 12; -webkit-box-orient: vertical; overflow: hidden; }
+.info-btn { padding: 0 6px; min-height: 0; font-size: 1rem; line-height: 1; color: var(--muted); }
+.info-btn:hover { color: var(--gold); }
+
 .breakdown { font-size: 0.9rem; }
 .breakdown .line { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dotted var(--line); }
 .breakdown .line.total { font-weight: 800; border-bottom: 0; border-top: 1px solid var(--line-2); margin-top: 4px; padding-top: 6px; }

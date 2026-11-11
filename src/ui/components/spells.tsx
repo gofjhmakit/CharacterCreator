@@ -1,6 +1,6 @@
 import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SpellDef } from '@/types/content';
 import type { Character } from '@/types/character';
 import type { CasterView, Derived } from '@/engine/derive';
@@ -44,6 +44,70 @@ export function SpellDetailModal({ spell, onClose, actions }: { spell: SpellDef;
   );
 }
 
+const canHover = () => typeof window !== 'undefined' && !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+
+/** Floating preview of a spell's rules text, shown while a spell row is hovered (mouse only). */
+function SpellHoverCard({ spell, x, top, bottom }: { spell: SpellDef; x: number; top: number; bottom: number }) {
+  const un = useUnits();
+  const W = Math.min(400, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(x + 14, window.innerWidth - W - 8));
+  // Below the row when there is room, otherwise above it.
+  const below = window.innerHeight - bottom > 300 || window.innerHeight - bottom > top;
+  const pos = below ? { top: bottom + 6 } : { bottom: window.innerHeight - top + 6 };
+  const comps = [spell.components.v && 'V', spell.components.s && 'S', spell.components.m && 'M'].filter(Boolean).join(', ');
+  return (
+    <div className="spell-hover" role="tooltip" style={{ left, width: W, ...pos }}>
+      <div className="spell-hover-title">{spell.name}</div>
+      <div className="small muted">{lvlLabel(spell.level)} {titleCase(spell.school)}{spell.ritual ? ' (ritual)' : ''}</div>
+      <div className="spell-hover-meta small">
+        <span><b>Casting time</b> {spell.castingTime}</span>
+        <span><b>Range</b> {un.text(spell.range)}</span>
+        <span><b>Components</b> {comps}{spell.components.material ? ` (${spell.components.material})` : ''}</span>
+        <span><b>Duration</b> {spell.concentration ? 'Concentration, ' : ''}{spell.duration}</span>
+        {spell.save && <span><b>Save</b> {spell.save.toUpperCase()}</span>}
+        {spell.attack && <span><b>Attack</b> {titleCase(spell.attack)} spell attack</span>}
+      </div>
+      <div className="spell-hover-desc pre">{spell.description}</div>
+      {spell.higherLevels && <div className="spell-hover-desc small"><b>At higher levels.</b> {spell.higherLevels}</div>}
+    </div>
+  );
+}
+
+/**
+ * Hover previews for spell lists: spread `bind(spell)` on each row and render `card` once.
+ * Touch and keyboard users get the same text through the row's details (ⓘ) button instead.
+ */
+export function useSpellHover() {
+  const [hover, setHover] = useState<{ spell: SpellDef; x: number; top: number; bottom: number } | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!hover) return;
+    const hide = () => setHover(null);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('keydown', hide);
+    window.addEventListener('mousedown', hide, true);
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('keydown', hide); window.removeEventListener('mousedown', hide, true); };
+  }, [hover]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const bind = (spell: SpellDef) => ({
+    onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+      if (!canHover()) return;
+      const r = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX;
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setHover({ spell, x, top: r.top, bottom: r.bottom }), 250);
+    },
+    onMouseLeave: () => { window.clearTimeout(timer.current); setHover(null); },
+  });
+  const card = hover ? <SpellHoverCard {...hover} /> : null;
+  return { bind, card };
+}
+
+/** Small "details" button for spell rows (opens the full text; works on touch screens). */
+export function SpellInfoButton({ onClick, name }: { onClick: () => void; name: string }) {
+  return <button type="button" className="ghost small info-btn" aria-label={`Show details of ${name}`} title="Spell details" onClick={(e) => { e.stopPropagation(); onClick(); }}>ⓘ</button>;
+}
+
 /** Spells available to a caster: class list + subclass expanded lists (warlock patrons, divine soul), limited to castable levels. */
 export function availableSpells(cv: CasterView, d: Derived, all: SpellDef[], ch: Character): SpellDef[] {
   const extraLists = new Set<string>();
@@ -67,6 +131,7 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
   const [conc, setConc] = useState<'any' | 'yes' | 'no'>('any');
   const [ritual, setRitual] = useState(false);
   const [detail, setDetail] = useState<SpellDef | null>(null);
+  const hover = useSpellHover();
   const [listFilter, setListFilter] = useState<string>('mine');
   const [time, setTime] = useState('any');
   const all = useMemo(() => [...db.spells.values()], [db]);
@@ -109,7 +174,7 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
           <thead><tr><th>Spell</th><th>Level</th><th>School</th><th>Time</th><th></th></tr></thead>
           <tbody>
             {list.slice(0, 200).map((s) => (
-              <tr key={s.id}>
+              <tr key={s.id} {...hover.bind(s)}>
                 <td><button className="ghost small" style={{ padding: 0, minHeight: 0 }} onClick={() => setDetail(s)}>{s.name}</button>{s.concentration && <span className="badge" title="Concentration">C</span>} {s.ritual && <span className="badge" title="Ritual">R</span>} {s.tags?.includes('restricted-school') && <span className="badge warn" title="Outside your subclass schools — only allowed at specific levels">school</span>} {db.isCustom('spell', s.id) && <span className="badge custom">custom</span>} {!mineIds.has(s.id) && <span className="badge warn" title={`Not normally available to a ${className}. You can still add it (homebrew / DM permission).`}>not a {className} spell</span>}</td>
                 <td className="nowrap">{s.level === 0 ? 'Cantrip' : s.level}</td>
                 <td>{titleCase(s.school)}</td>
@@ -122,6 +187,7 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
         {list.length === 0 && <div className="empty">No matching spells.</div>}
       </div>
       {detail && <SpellDetailModal spell={detail} onClose={() => setDetail(null)} />}
+      {hover.card}
     </div>
   );
 }

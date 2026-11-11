@@ -8,6 +8,8 @@ import { useApp } from '@/state/store';
 import { checkPrerequisite } from '@/engine/prereq';
 import { titleCase } from './common';
 import { fuzzySearch } from '@/search/fuzzy';
+import type { SpellDef } from '@/types/content';
+import { SpellDetailModal, SpellInfoButton, useSpellHover } from './spells';
 
 interface Props { cv: ChoiceView; ch: Character; d: Derived; onChange: (values: string[]) => void; compact?: boolean }
 
@@ -207,6 +209,8 @@ function FeatPicker({ selected, max, ch, d, onChange, categories }: { selected: 
 function SpellChoice({ cv, d, onChange }: { cv: ChoiceView; d: Derived; onChange: (v: string[]) => void }) {
   const db = useDb();
   const [q, setQ] = useState('');
+  const [detail, setDetail] = useState<SpellDef | null>(null);
+  const hover = useSpellHover();
   const f = cv.def.spellFilter ?? {};
   const pool = useMemo(() => [...db.spells.values()].filter((s) =>
     (!f.classes?.length || s.classes.some((c) => f.classes!.includes(c))) &&
@@ -219,17 +223,20 @@ function SpellChoice({ cv, d, onChange }: { cv: ChoiceView; d: Derived; onChange
   const shown = q ? fuzzySearch(q, pool, (s) => ({ id: s.id, name: s.name, keywords: [s.school, ...s.classes] })).map((h) => h.item) : pool;
   return (
     <div className="stack">
-      <div className="row">{cv.selected.map((id) => <span key={id} className="chip gold">{db.spells.get(id)?.name ?? id}<button aria-label="Remove" onClick={() => onChange(cv.selected.filter((x) => x !== id))}>✕</button></span>)}</div>
+      <div className="row">{cv.selected.map((id) => { const sp = db.spells.get(id); return <span key={id} className="chip gold" {...(sp ? hover.bind(sp) : {})}>{sp?.name ?? id}{sp && <SpellInfoButton name={sp.name} onClick={() => setDetail(sp)} />}<button aria-label="Remove" onClick={() => onChange(cv.selected.filter((x) => x !== id))}>✕</button></span>; })}</div>
       {cv.selected.length < cv.count && <>
         <input placeholder={`Search ${pool.length} spells…`} value={q} onChange={(e) => setQ(e.target.value)} />
         <div className="list panel flush" style={{ maxHeight: 260, overflow: 'auto' }}>
           {shown.slice(0, 80).map((s) => (
-            <div key={s.id} className="list-row clickable" onClick={() => onChange([...cv.selected, s.id])}>
-              <span className="grow">{s.name}</span><span className="small muted">{s.level === 0 ? 'Cantrip' : `Level ${s.level}`} · {titleCase(s.school)}</span>
+            <div key={s.id} className="list-row clickable" onClick={() => onChange([...cv.selected, s.id])} {...hover.bind(s)}>
+              <span className="grow">{s.name}{s.concentration && <span className="badge" title="Concentration"> C</span>}{s.ritual && <span className="badge" title="Ritual"> R</span>}</span><span className="small muted">{s.level === 0 ? 'Cantrip' : `Level ${s.level}`} · {titleCase(s.school)}</span>
+              <SpellInfoButton name={s.name} onClick={() => setDetail(s)} />
             </div>
           ))}
         </div>
       </>}
+      {hover.card}
+      {detail && <SpellDetailModal spell={detail} onClose={() => setDetail(null)} actions={cv.selected.length < cv.count && !cv.selected.includes(detail.id) ? <button className="primary" onClick={() => { onChange([...cv.selected, detail.id]); setDetail(null); }}>Choose {detail.name}</button> : undefined} />}
     </div>
   );
 }

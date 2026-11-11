@@ -7,7 +7,7 @@ import { ABILITY_NAMES, signed } from '@/types/core';
 import { useApp } from '@/state/store';
 import { useRoller } from '../../components/roll';
 import { Modal, BreakdownView, Empty, Pips, titleCase, Field } from '../../components/common';
-import { SpellPicker, SpellDetailModal, SpellMeta, addClassSpell, lvlLabel, availableSpells } from '../../components/spells';
+import { SpellPicker, SpellDetailModal, SpellMeta, SpellInfoButton, addClassSpell, lvlLabel, availableSpells, useSpellHover } from '../../components/spells';
 import { SORCERY_POINT_SLOT_COST } from '@/engine/spellSlots';
 import { arcaneRecovery } from '@/engine/actions';
 import { uid } from '@/engine/factory';
@@ -214,6 +214,8 @@ function AddOtherSpell({ onClose, onAdd }: { onClose: () => void; onAdd: (spellI
   const [uses, setUses] = useState('');
   const [ability, setAbility] = useState<'int' | 'wis' | 'cha'>('cha');
   const [cls, setCls] = useState('any');
+  const [detail, setDetail] = useState<SpellDef | null>(null);
+  const hover = useSpellHover();
   const all = useMemo(() => [...db.spells.values()].filter((x) => cls === 'any' || x.classes.includes(cls)), [db, cls]);
   const classes = useMemo(() => [...new Set([...db.spells.values()].flatMap((x) => x.classes))].sort(), [db]);
   const list = q ? fuzzySearch(q, all, (s) => ({ id: s.id, name: s.name, keywords: [s.school, ...s.classes] })).map((h) => h.item) : [...all].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name)).slice(0, 80);
@@ -227,8 +229,10 @@ function AddOtherSpell({ onClose, onAdd }: { onClose: () => void; onAdd: (spellI
         </div>
         <div className="row"><input className="grow" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} /><select value={cls} onChange={(e) => setCls(e.target.value)} style={{ width: 'auto' }} aria-label="Class list"><option value="any">All classes</option>{classes.map((c) => <option key={c} value={c}>{titleCase(c)}</option>)}</select></div>
         <div className="list panel flush" style={{ maxHeight: 360, overflow: 'auto' }}>
-          {list.slice(0, 80).map((s) => <div key={s.id} className="list-row clickable" onClick={() => { onAdd(s.id, label, uses ? Number(uses) : undefined, ability); onClose(); }}><span className="grow">{s.name}</span><span className="small muted">{lvlLabel(s.level)} · {titleCase(s.school)} · {s.classes.map(titleCase).join(', ')}</span></div>)}
+          {list.slice(0, 80).map((s) => <div key={s.id} className="list-row clickable" {...hover.bind(s)} onClick={() => { onAdd(s.id, label, uses ? Number(uses) : undefined, ability); onClose(); }}><span className="grow">{s.name}</span><span className="small muted">{lvlLabel(s.level)} · {titleCase(s.school)} · {s.classes.map(titleCase).join(', ')}</span><SpellInfoButton name={s.name} onClick={() => setDetail(s)} /></div>)}
         </div>
+        {hover.card}
+        {detail && <SpellDetailModal spell={detail} onClose={() => setDetail(null)} />}
       </div>
     </Modal>
   );
