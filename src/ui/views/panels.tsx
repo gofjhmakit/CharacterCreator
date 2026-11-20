@@ -62,7 +62,7 @@ export function HpPanel({ ch, d, set, replace }: P) {
         {ch.combat.hpTemp > 0 && <button className="ghost small" onClick={() => set((c) => { c.combat.hpTemp = 0; })}>Clear temp</button>}
       </div>
       {conc !== null && ch.combat.concentration && <ConcentrationCheck dc={conc} ch={ch} d={d} set={set} onDone={() => setConc(null)} />}
-      {dying && <DeathSaves ch={ch} set={set} replace={replace} />}
+      {dying && <DeathSaves ch={ch} d={d} set={set} replace={replace} />}
       <div className="row between">
         <HitDice ch={ch} d={d} replace={replace} />
         <button className="small" onClick={() => roller.d20('Initiative', d.initiative, 'initiative', { halflingLucky: d.flags.has('halfling-lucky') })}>Roll initiative {signed(d.initiative.total)}</button>
@@ -109,12 +109,19 @@ function HpMaxInfo({ d }: { d: Derived }) {
   </>;
 }
 
-function DeathSaves({ ch, set, replace }: Omit<P, 'd'>) {
+function DeathSaves({ ch, d, set, replace }: P) {
   const toast = useApp((s) => s.toast);
   const addRoll = useApp((s) => s.addRoll);
+  const autoAdvantage = useApp((s) => s.prefs.autoAdvantage);
   const ds = ch.combat.deathSaves;
   const roll = () => {
-    const r = rollDeathSave(ch);
+    let r: ReturnType<typeof rollDeathSave>;
+    try {
+      r = rollDeathSave(ch, undefined, { ...d.deathSave, mode: autoAdvantage ? d.deathSave.mode : 'normal' });
+    } catch (error) {
+      toast({ kind: 'error', text: error instanceof Error ? error.message : 'Could not roll death save.' });
+      return;
+    }
     addRoll(r.roll);
     replace(r.character, 'Death save');
     toast({ kind: r.result.includes('fail') || r.result === 'failure' ? 'error' : 'success', text: `Death save: ${r.roll.natural} — ${r.result.replace('-', ' ')}`, detail: r.status === 'dead' ? 'Three failures: the character dies.' : r.status === 'stable' ? 'Three successes: stable.' : r.status === 'revived' ? 'Natural 20: regain 1 HP!' : undefined });
@@ -125,7 +132,7 @@ function DeathSaves({ ch, set, replace }: Omit<P, 'd'>) {
       <div className="row" style={{ marginTop: 6 }}>
         <span className="small">Successes</span><Pips kind="succ" max={3} used={3 - ds.successes} onSet={(u) => set((c) => { c.combat.deathSaves.successes = 3 - u; })} />
         <span className="small">Failures</span><Pips kind="fail" max={3} used={3 - ds.failures} onSet={(u) => set((c) => { c.combat.deathSaves.failures = 3 - u; })} />
-        <button className="small primary" onClick={roll} disabled={ds.failures >= 3 || ds.successes >= 3}>Roll death save</button>
+        <button className="small primary" onClick={roll} title={`Death save ${fmtBonus(d.deathSave)} (${autoAdvantage ? d.deathSave.mode : 'normal'})`} disabled={ds.failures >= 3 || ds.successes >= 3}>Roll death save</button>
         <button className="small ghost" onClick={() => set((c) => { c.combat.deathSaves = { successes: 0, failures: 0 }; c.combat.stable = true; })}>Stabilize</button>
       </div>
     </div>

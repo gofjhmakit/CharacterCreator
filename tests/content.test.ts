@@ -41,7 +41,23 @@ describe('bundled content', () => {
       expect(r.skills.arcana.prof).toBe(1);
       expect(r.skills.medicine.prof).toBe(1);
       expect(r.saves.con.conditional.some((x) => x.op === 'advantage' && x.condition.includes('poison'))).toBe(true);
+      expect(r.deathSave.mode).toBe('advantage');
+      expect(r.saves.con.mode).toBe('normal');
       expect(r.resources.find((x) => x.id === 'knowledge-from-a-past-life')?.max).toBe(4);
+    });
+
+    it('offers Drakewardens a replacement language when Draconic is already known', () => {
+      const c = make({ ruleset, race: 'dragonborn', classes: [{ id: 'ranger', level: 3, sub: sub('drakewarden') }] });
+      if (ruleset === 'dnd5e-2024') c.choices['origin:languages'] = ['Draconic', 'Elvish'];
+      const key = `subclass:${sub('drakewarden')}:draconic-gift:replacement-language`;
+      c.choices[key] = ['Sylvan'];
+      const r = d(c);
+      expect(r.proficiencies.languages.filter((language) => language === 'Draconic')).toHaveLength(1);
+      expect(r.proficiencies.languages).toContain('Sylvan');
+      expect(r.choices.find((choice) => choice.key === key)?.def.optional).toBe(true);
+      expect(r.spells.find((spell) => spell.spellId === 'thaumaturgy')).toMatchObject({ classId: 'ranger', granted: true });
+      delete c.choices[key];
+      expect(d(c).proficiencies.languages).not.toContain('Sylvan');
     });
 
     it('provides a usable Artificer spell list, starting kit, and level-1 casting', () => {
@@ -113,9 +129,17 @@ describe('bundled content', () => {
       expect(d(c).speed.walk.value).toBe(30);
       expect(d(c).skills.stealth.advantage).toHaveLength(0);
     });
+
   });
 
   describe('ruleset-specific additions', () => {
+    it('keeps legacy Conjure Barrage damage at every cast level in both databases', () => {
+      for (let level = 3; level <= 9; level++) {
+        expect(db.spells.get('conjure-barrage')?.damage?.bySlot?.[level]).toBe('3d8');
+        expect(db24.spells.get('conjure-barrage')?.damage?.bySlot?.[level]).toBe('3d8');
+      }
+    });
+
     it('translates all Shadar-kai crossbow training without modifying 2014 grants', () => {
       for (const [oldId, newId] of [['crossbow-light', 'light-crossbow'], ['crossbow-hand', 'hand-crossbow'], ['crossbow-heavy', 'heavy-crossbow']]) {
         for (const ruleset of ['dnd5e-2014', 'dnd5e-2024'] as const) {

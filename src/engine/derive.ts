@@ -175,6 +175,7 @@ export interface Derived {
   classLine: string;
   abilities: Record<Ability, AbilityView>;
   saves: Record<Ability, SaveView>;
+  deathSave: Breakdown;
   skills: Record<SkillId, SkillView>;
   checks: Record<Ability, Breakdown>;
   passives: Record<'perception' | 'investigation' | 'insight', Breakdown>;
@@ -603,7 +604,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   }
   const equippedWeapons = inv.filter((i) => i.equipped && i.item.weapon);
 
-  const reqCtx = { armorWorn, shieldWorn, equippedWeapons };
+  const reqCtx = { armorWorn, shieldWorn, equippedWeapons, activeConditions };
   const meets = (reqs: Requirement[] | undefined, attackCtx?: { weapon?: InventoryItem; ability?: Ability }): boolean => {
     if (!reqs) return true;
     return reqs.every((r) => checkRequirement(r, reqCtx, attackCtx));
@@ -733,6 +734,10 @@ export function derive(ch: Character, db: ContentDB): Derived {
     applyMods(b, ['save:all', `save:${a}`]);
     saves[a] = { ...finalizeBreakdown(b), ability: a, proficient, profSources: saveProfs[a] ?? [] };
   }
+  const deathSave = emptyBreakdown();
+  if (flags.has('prof-all-saves')) deathSave.parts.push({ label: 'Proficiency', value: profBonus });
+  applyMods(deathSave, ['save:all', 'save:death']);
+  finalizeBreakdown(deathSave);
 
   // ------------------------------------------------------------------ skills & checks
   const joat = mods.some((m) => m.mod.target === 'prof:half-unproficient-checks' && !m.mod.condition);
@@ -1100,7 +1105,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   const sizeStr = ch.identity.size ?? race?.size ?? 'medium';
 
   return {
-    totalLevel, profBonus, classes, classLine, abilities, saves, skills, checks, passives, initiative, ac, speed,
+    totalLevel, profBonus, classes, classLine, abilities, saves, deathSave, skills, checks, passives, initiative, ac, speed,
     hp: { max: hpMax, parts: hpParts, current: Math.min(ch.combat.hpCurrent, hpMax), temp: ch.combat.hpTemp, override: hpOverride },
     hitDice: [...diceMap.values()].sort((a, b) => b.die - a.die),
     senses: Object.entries(senses).map(([name, s]) => ({ name, range: s.range, source: s.source })),
@@ -1170,9 +1175,11 @@ export function itemEffectActive(e: Effect, it: InventoryItem): boolean {
   }
 }
 
-function checkRequirement(r: Requirement, ctx: { armorWorn?: InventoryItem; shieldWorn?: InventoryItem; equippedWeapons: InventoryItem[] }, attack?: { weapon?: InventoryItem; ability?: Ability }): boolean {
+function checkRequirement(r: Requirement, ctx: { armorWorn?: InventoryItem; shieldWorn?: InventoryItem; equippedWeapons: InventoryItem[]; activeConditions: Set<ConditionId> }, attack?: { weapon?: InventoryItem; ability?: Ability }): boolean {
   const cat = ctx.armorWorn?.item.armor?.category;
   switch (r) {
+    case 'conscious': return !ctx.activeConditions.has('unconscious');
+    case 'not-incapacitated': return !ctx.activeConditions.has('incapacitated');
     case 'armored': return !!ctx.armorWorn;
     case 'unarmored': return !ctx.armorWorn;
     case 'no-shield': return !ctx.shieldWorn;

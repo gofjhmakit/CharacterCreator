@@ -269,7 +269,7 @@ const paladin: ClassDef = {
     f(3, 'divine-health', 'Divine Health', T('divine-health')),
     subFeature(3, 'sacred-oath', 'Sacred Oath', T('sacred-oath')),
     f(5, 'paladin-extra-attack', 'Extra Attack', T('paladin-extra-attack')),
-    f(6, 'aura-of-protection', 'Aura of Protection', T('aura-of-protection'), { effects: [eff('aura-of-protection', [mod('save:all', 'max(1, cha)')])] }),
+    f(6, 'aura-of-protection', 'Aura of Protection', T('aura-of-protection'), { effects: [eff('aura-of-protection', [mod('save:all', 'max(1, cha)', { requires: ['conscious'] })])] }),
     f(10, 'aura-of-courage', 'Aura of Courage', T('aura-of-courage'), { grants: { conditionImmunities: ['frightened'] } }),
     f(11, 'improved-divine-smite', 'Improved Divine Smite', T('improved-divine-smite'), { effects: [eff('improved-divine-smite', [mod('extra-damage', '1d8', { damageType: 'radiant', scope: 'melee-weapon' })])] }),
     f(14, 'cleansing-touch', 'Cleansing Touch', T('cleansing-touch'), { activation: 'action', resource: res('cleansing-touch', 'Cleansing Touch', 'max(1, cha)', 'long') }),

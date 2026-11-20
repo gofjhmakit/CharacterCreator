@@ -170,7 +170,7 @@ export const CLASSES_2024: ClassDef[] = [
       'paladin-paladins-smite': { grants: { spells: [{ spellId: 'divine-smite', mode: 'always-prepared' }] }, resource: res('paladins-smite', "Paladin's Smite (free cast)", 1, 'long') },
       'paladin-channel-divinity': { resource: res('channel-divinity', 'Channel Divinity', tableFormula('paladin', 'channel_divinity_charges'), 'long', { shortRestRecover: 1 }) },
       'paladin-faithful-steed': { grants: { spells: [{ spellId: 'find-steed', mode: 'always-prepared' }] }, resource: res('faithful-steed', 'Faithful Steed (free cast)', 1, 'long') },
-      'paladin-aura-of-protection': { effects: [eff('aura-of-protection', [mod('save:all', 'max(1, cha)')])] },
+      'paladin-aura-of-protection': { effects: [eff('aura-of-protection', [mod('save:all', 'max(1, cha)', { requires: ['not-incapacitated'] })])] },
       'paladin-aura-of-courage': { grants: { conditionImmunities: ['frightened'] } },
       'paladin-radiant-strikes': { effects: [eff('radiant-strikes', [mod('extra-damage', '1d8', { damageType: 'radiant', scope: 'melee-weapon' })])] },
     },

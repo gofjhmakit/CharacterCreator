@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChoiceEditor, choiceComplete } from '@/ui/components/ChoiceEditor';
 import { FeaturesTab } from '@/ui/views/tabs/FeaturesTab';
+import { SpellsTab } from '@/ui/views/tabs/SpellsTab';
+import { HpPanel } from '@/ui/views/panels';
 import { RulesetProvider } from '@/ui/ruleset';
 import { useApp } from '@/state/store';
 import { make, d } from './helpers';
@@ -16,7 +18,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
-  useApp.setState({ rolls: [], toasts: [] });
+  useApp.setState({ rolls: [], toasts: [], prefs: { ...useApp.getState().prefs, autoAdvantage: true } });
 });
 
 afterEach(() => {
@@ -94,5 +96,66 @@ describe('Knowledge from a Past Life action', () => {
     expect(c.resources['knowledge-from-a-past-life']?.used ?? 0).toBe(0);
     expect(useApp.getState().rolls).toHaveLength(0);
     expect(useApp.getState().toasts.some((toast) => toast.kind === 'error')).toBe(true);
+  });
+});
+
+describe('Reborn death-save button', () => {
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('rolls two d20s and keeps the higher in %s', (ruleset) => {
+    const c = make({ ruleset, race: 'reborn' });
+    c.combat.hpCurrent = 0;
+    const replace = vi.fn();
+    act(() => root.render(createElement(RulesetProvider, { value: ruleset }, createElement(HpPanel, {
+      ch: c, d: d(c), set: vi.fn(), replace,
+    }))));
+    click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Roll death save'));
+    const rolls = useApp.getState().rolls;
+    expect(rolls).toHaveLength(1);
+    expect(rolls[0]).toMatchObject({ kind: 'death-save', mode: 'advantage' });
+    expect(rolls[0].terms[0].rolls).toHaveLength(2);
+    expect(rolls[0].natural).toBe(Math.max(...rolls[0].terms[0].rolls));
+    expect(replace).toHaveBeenCalledOnce();
+  });
+
+  it('respects the preference to disable automatic advantage', () => {
+    useApp.setState({ prefs: { ...useApp.getState().prefs, autoAdvantage: false } });
+    const c = make({ race: 'reborn' });
+    c.combat.hpCurrent = 0;
+    act(() => root.render(createElement(HpPanel, { ch: c, d: d(c), set: vi.fn(), replace: vi.fn() })));
+    click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Roll death save'));
+    const roll = useApp.getState().rolls[0];
+    expect(roll.mode).toBe('normal');
+    expect(roll.terms[0].rolls).toHaveLength(1);
+  });
+
+  it('reports invalid death-save dice without replacing the character or recording a roll', () => {
+    const c = make({ race: 'reborn' });
+    c.combat.hpCurrent = 0;
+    c.effects.push({ id: 'invalid', name: 'Invalid dice', createdAt: '', oneShot: true, effect: { id: 'invalid', modifiers: [{ target: 'save:death', op: 'add', dice: 'invalid' }] } });
+    const replace = vi.fn();
+    act(() => root.render(createElement(HpPanel, { ch: c, d: d(c), set: vi.fn(), replace })));
+    click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Roll death save'));
+    expect(replace).not.toHaveBeenCalled();
+    expect(useApp.getState().rolls).toHaveLength(0);
+    expect(useApp.getState().toasts.some((toast) => toast.kind === 'error')).toBe(true);
+    expect(c.effects).toHaveLength(1);
+  });
+});
+
+describe('Conjure Barrage casting', () => {
+  it('retains the damage-roll button for every higher slot', () => {
+    const c = make({ classes: [{ id: 'ranger', level: 5 }, { id: 'wizard', level: 15 }] });
+    c.spells.entries.push({ id: 'barrage', spellId: 'conjure-barrage', classId: 'ranger', source: 'class', prepared: true });
+    act(() => root.render(createElement(SpellsTab, { ch: c, d: d(c), set: vi.fn(), replace: vi.fn() })));
+    const spell = [...container.querySelectorAll('tr')].find((entry) => entry.textContent?.includes('Conjure Barrage'));
+    click([...spell?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Cast'));
+    const spend = [...document.querySelectorAll('select')].find((select) => [...select.options].some((option) => option.value === 's9'))!;
+    expect(spend).toBeTruthy();
+    for (let level = 3; level <= 9; level++) {
+      act(() => { spend.value = `s${level}`; spend.dispatchEvent(new Event('change', { bubbles: true })); });
+      const damage = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Damage 3d8');
+      click(damage);
+      expect(useApp.getState().rolls[0]).toMatchObject({ label: 'Conjure Barrage damage', expression: '3d8' });
+    }
+    expect(useApp.getState().rolls).toHaveLength(7);
   });
 });

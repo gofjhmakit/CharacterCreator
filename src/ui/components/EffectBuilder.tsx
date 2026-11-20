@@ -69,7 +69,7 @@ const KINDS: Kind[] = [
 
 const ROLL_TARGETS: { id: string; label: string }[] = [
   { id: 'attack', label: 'Attack rolls' }, { id: 'initiative', label: 'Initiative' },
-  { id: 'save:all', label: 'All saving throws' }, ...ABILITIES.map((a) => ({ id: `save:${a}`, label: `${ABILITY_NAMES[a]} saves` })),
+  { id: 'save:all', label: 'All saving throws' }, { id: 'save:death', label: 'Death saving throws' }, ...ABILITIES.map((a) => ({ id: `save:${a}`, label: `${ABILITY_NAMES[a]} saves` })),
   { id: 'check:all', label: 'All ability checks' }, ...ABILITIES.map((a) => ({ id: `check:${a}`, label: `${ABILITY_NAMES[a]} checks` })),
   ...SKILL_IDS.map((s) => ({ id: `skill:${s}`, label: `${SKILLS[s].name} checks` })),
 ];
