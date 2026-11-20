@@ -34,7 +34,11 @@ Deployable to GitHub Pages or any static host.
 
 ## Rulesets and content coverage
 
-Every character is created for one ruleset: **2014** (`dnd5e-2014`) or **2024** (`dnd5e-2024`). The two are never mixed. Each ruleset has its own content database (species/races, classes, subclasses, backgrounds, feats, spells, items), so a 2024 character only ever sees 2024 options. The ruleset is fixed after creation because 2014 and 2024 content use different ids. To convert a character, duplicate it and rebuild it.
+Every character is created for one ruleset: **2014** (`dnd5e-2014`) or **2024** (`dnd5e-2024`). Each ruleset has its own content database (species/races, classes, subclasses, backgrounds, feats, spells, items). The 2024 database also includes explicitly labelled **Legacy** compatibility copies where an option has no bundled revised version; revised options take precedence. The ruleset is fixed after creation because content and progression differ. To convert a character, duplicate it and rebuild it.
+
+**Expanded options:** Shadar-kai, Half-Elf, Aasimar and Reborn are available in both rulesets. The 2024 Half-Elf, Shadar-kai and Reborn use background ability increases and origin languages rather than racial bonuses. Aasimar uses its PHB 2024 traits. Artificer includes Alchemist, Armorer, Artillerist and Battle Smith, spell-list filtering and starting equipment. Its 2024 entry is explicitly the **TCoE legacy class**, not a revised Artificer publication.
+
+The additional subclass summaries include Beast, Battlerager, Creation, Spirits, Arcana, Purple Dragon Knight (Banneret), Long Death, Sun Soul, Oathbreaker (DM approval), Drakewarden and Undying. Unrevised 2014 subclasses are available as 2024 legacy copies: early features and spell blocks start at level 3, monk ki costs use Focus, and renamed equipment/spells use their 2024 counterparts. Other mechanics retain their sourcebook summaries; companions, infusion selection, retained Reborn ancestry and features marked manual are managed at the table or through custom features.
 
 What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 - **Origin:** ability increases come from the **background** (+2/+1 or +1/+1/+1 among its three abilities), along with an **Origin feat** (e.g. Magic Initiate (Cleric) for the Acolyte, with the spell list preset). You get Common + 2 languages of your choice. Species give no ability increases.
@@ -49,24 +53,21 @@ What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 
 | Content | Count | Source |
 |---|---|---|
-
-| Content | Count | Source |
-|---|---|---|
-| Classes | 12 | SRD 5.1 text + structured progression |
-| Subclasses | 99 (every subclass listed in the spec) | 12 with SRD text; the rest are original mechanical summaries |
-| Races / species | 28 (all races listed in the spec, plus Custom Lineage) with subraces | SRD races with SRD text; others are summaries |
+| Classes | 13, including Artificer | SRD 5.1 + TCoE summary and structured progression |
+| Subclasses | 114 | 12 with SRD text; the rest are original mechanical summaries |
+| Races / species | 30 with subraces | SRD races with SRD text; others are summaries |
 | Backgrounds | 14 (13 listed + Custom) | Acolyte is SRD; others are summaries |
 | Feats | 58 | Grappler is SRD; others are summaries |
-| Spells | 319 SRD + 34 referenced non-SRD (summary only) | SRD 5.1 |
+| Spells | 319 SRD + referenced non-SRD summaries, including supporting Artificer and subclass spells | SRD 5.1 + summaries |
 | Items | 728 total: 237 mundane, 332 SRD magic items (175 with structured effects, 35 castable-spell items such as wands and staffs), 159 generated +1/+2/+3 weapons, armor, shields and ammunition | SRD 5.1 |
 
 **2024 content**
 
 | Content | Count | Source |
 |---|---|---|
-| Classes | 12, progression generated from the SRD 5.2 class tables | SRD 5.2 text + structured mechanics |
-| Subclasses | 48 (all PHB 2024 subclasses) | 12 with SRD 5.2 text; 36 original summaries |
-| Species | 9 with lineages, ancestries and legacies | SRD 5.2 |
+| Classes | 12 revised classes + legacy Artificer | SRD 5.2 text + structured mechanics; TCoE Artificer |
+| Subclasses | 48 PHB 2024 + 69 legacy-compatible subclasses | 12 with SRD 5.2 text; others are original summaries or legacy SRD content |
+| Species | 13 with lineages, ancestries and legacies | 9 SRD 5.2 + PHB 2024 Aasimar + 3 legacy-compatible species |
 | Backgrounds | 16 | 4 SRD 5.2 (Acolyte, Criminal, Sage, Soldier); 12 summaries |
 | Feats | 10 origin, 37 general, 10 fighting style, 7 epic boons | SRD 5.2 + summaries |
 | Spells | 339 SRD 5.2 + referenced summaries | SRD 5.2 |
@@ -75,7 +76,7 @@ What changes with **2024 rules** (`src/engine/rules.ts` plus the 2024 content):
 **Licensing.** SRD 5.1 and SRD 5.2 material © Wizards of the Coast LLC is used under
 [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/legalcode). The SRD data conversion is based on
 [5e-bits/5e-database](https://github.com/5e-bits/5e-database) (MIT; copy in `vendor/srd-5e-database/LICENSE.md`).
-Non-SRD options (PHB 2014/2024, XGtE, TCoE, VGtM, MotM, ERLW, EEPC, SCAG, FTD, MOoT, VRGtR) are **not** reproduced. They are represented as structured mechanics (feature levels, uses, modifiers) with brief original descriptions, tagged with their book, so the app stays legally distributable. If you own the books, you can paste the full text into custom content. Dungeons & Dragons is a trademark of Wizards of the Coast; this is unofficial fan content.
+Non-SRD options (PHB 2014/2024, DMG 2014, XGtE, TCoE, VGtM, MotM, ERLW, EEPC, SCAG, FTD, MOoT, VRGtR) are **not** reproduced. They are represented as structured mechanics (feature levels, uses, modifiers) with brief original descriptions, tagged with their book, so the app stays legally distributable. If you own the books, you can paste the full text into custom content. Dungeons & Dragons is a trademark of Wizards of the Coast; this is unofficial fan content.
 
 **Not a complete database.** Many published items, spells and options are missing. The Library lets you add whatever you need.
 

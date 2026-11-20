@@ -1,7 +1,7 @@
 // 2024 species (SRD 5.2). No ability score increases here — they come from the background.
 import type { FeatureDef, RaceDef, SubraceDef, SpellGrant } from '@/types/content';
 import type { DamageType } from '@/types/core';
-import { SRD52, T24 } from './helpers24';
+import { SRD52, PHB24, T24 } from './helpers24';
 import { mod, adv, grant, flag, eff, toggle, choice, res } from '../data/helpers';
 
 const t = (id: string, name: string, o: Partial<FeatureDef> = {}): FeatureDef => ({ id, name, description: T24(`trait:${id}`, o.description ?? ''), source: SRD52, ...o, ...(o.description && !T24(`trait:${id}`) ? {} : {}) });
@@ -9,7 +9,7 @@ const sp = (spellId: string, minLevel: number, free = true): SpellGrant => ({ sp
 const cantrip = (spellId: string): SpellGrant => ({ spellId, mode: 'always-prepared' });
 const castAbility = choice('ability', 'Spellcasting ability for these spells', 'options', 1, { options: [{ id: 'cast-int', name: 'Intelligence' }, { id: 'cast-wis', name: 'Wisdom' }, { id: 'cast-cha', name: 'Charisma' }] });
 const sub = (id: string, name: string, traits: FeatureDef[], extra: Partial<SubraceDef> = {}): SubraceDef => ({ id, name, source: SRD52, description: '', traits, ...extra });
-const species = (r: Omit<RaceDef, 'ruleset' | 'abilityBonuses' | 'source'>): RaceDef => ({ ruleset: 'dnd5e-2024', abilityBonuses: {}, source: SRD52, ...r });
+const species = (r: Omit<RaceDef, 'ruleset' | 'abilityBonuses' | 'source'> & { source?: RaceDef['source'] }): RaceDef => ({ ruleset: 'dnd5e-2024', abilityBonuses: {}, source: SRD52, ...r });
 const dv = (range: number) => t(`darkvision-${range}`, `Darkvision (${range} ft.)`, { grants: { senses: { darkvision: range } } });
 
 const DRAGONS: [string, DamageType][] = [['black', 'acid'], ['blue', 'lightning'], ['brass', 'fire'], ['bronze', 'lightning'], ['copper', 'acid'], ['gold', 'fire'], ['green', 'poison'], ['red', 'fire'], ['silver', 'cold'], ['white', 'cold']];
@@ -28,6 +28,19 @@ const LEGACIES: [string, string, DamageType, string, string, string][] = [
 ];
 
 export const SPECIES_2024: RaceDef[] = [
+  species({ id: 'aasimar', name: 'Aasimar', description: 'Mortals infused with a spark of the Upper Planes.', size: 'medium', sizeOptions: ['small', 'medium'], speed: { walk: 30 }, creatureType: 'Humanoid', source: PHB24,
+    traits: [
+      t('celestial-resistance', 'Celestial Resistance', { description: 'You have resistance to necrotic and radiant damage.', grants: { resistances: ['necrotic', 'radiant'] } }),
+      dv(60),
+      t('healing-hands', 'Healing Hands', { description: 'Magic action: touch a creature and roll a number of d4s equal to your proficiency bonus; it regains that many HP. Once per long rest.', activation: 'action', resource: res('healing-hands', 'Healing Hands', 1, 'long'), effects: [{ id: 'healing-hands', trigger: 'on-use', outcomes: [{ kind: 'heal', dice: '{prof}d4' }] }] }),
+      t('light-bearer', 'Light Bearer', { description: 'You know the Light cantrip. Charisma is your spellcasting ability for it.', grants: { spells: [{ ...cantrip('light'), ability: 'cha' }] } }),
+      t('celestial-revelation', 'Celestial Revelation', { description: 'From 3rd level, transform as a bonus action for 1 minute, once per long rest. Choose a form each time. Once on each of your turns, add PB damage to one target damaged by your attack or spell (necrotic for Shroud; radiant otherwise). Turn off the active form when the transformation ends.', level: 3, activation: 'bonus', resource: res('celestial-revelation', 'Celestial Revelation', 1, 'long'), choices: [choice('form', 'Revelation form (choose each transformation)', 'options', 1, { options: [
+        { id: 'heavenly-wings', name: 'Heavenly Wings', description: 'Spectral wings grant a flying speed equal to your walking speed.', effects: [toggle('heavenly-wings', 'Heavenly Wings (1 min)', [mod('speed:fly', 'walk', { op: 'max' })])] },
+        { id: 'inner-radiance', name: 'Inner Radiance', description: 'Bright light 10 ft, dim light another 10 ft. At each turn’s end, creatures within 10 ft take PB radiant damage.', effects: [{ id: 'inner-radiance', manual: true, description: 'At the end of each of your turns while transformed, creatures within 10 ft take PB radiant damage.' }] },
+        { id: 'necrotic-shroud', name: 'Necrotic Shroud', description: 'On transforming, chosen creatures within 10 ft make a CHA save (DC 8 + PB + CHA) or are frightened until your next turn ends.', effects: [{ id: 'necrotic-shroud', manual: true, description: 'Resolve the transformation’s CHA saves and frightened condition at the table.' }] },
+      ] })], manual: true }),
+    ].map((trait) => ({ ...trait, source: PHB24 })),
+  }),
   species({ id: 'dragonborn', name: 'Dragonborn', description: 'Descendants of dragons who carry their ancestors’ breath and resilience.', size: 'medium', speed: { walk: 30 }, creatureType: 'Humanoid',
     traits: [
       dv(60),

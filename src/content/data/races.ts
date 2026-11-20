@@ -1,7 +1,7 @@
 // Races / species (2014). SRD races use SRD text; others are brief mechanical summaries.
 import type { FeatureDef, RaceDef, SubraceDef, ChoiceDef } from '@/types/content';
 import { SRD, PHB, VGM, MPMM, ERLW, EEPC, MOOT, SCAG, T, mod, adv, grant, flag, eff, choice, res } from './helpers';
-import type { DamageType } from '@/types/core';
+import { ALL_TOOLS, type DamageType } from '@/types/core';
 
 const t = (id: string, name: string, description: string, o: Partial<FeatureDef> = {}): FeatureDef => ({ id, name, description, ...o });
 const dv = (range = 60, name = 'Darkvision'): FeatureDef => t(range > 60 ? `superior-darkvision` : 'darkvision', name, `You can see in dim light within ${range} feet as if it were bright light, and in darkness as if it were dim light (shades of gray only).`, { grants: { senses: { darkvision: range } } });
@@ -420,6 +420,37 @@ export const RACES: RaceDef[] = [
       sub('wildhunt', 'Wildhunt', ERLW, 'Keen hunters.', { wis: 2, dex: 1 }, [t('wildhunt-shift', 'Wildhunt', 'Proficiency in Survival; while shifted advantage on WIS checks and no creature within 30 ft can have advantage on attacks against you.', { grants: { skills: ['survival'] }, effects: [{ id: 'wildhunt-adv', name: 'Shifted', activation: 'toggle', toggleKey: 'shifting', modifiers: [adv('check:wis')] }] })]),
     ],
     subraceRequired: true,
+  }),
+  race({
+    id: 'shadar-kai', name: 'Shadar-kai', source: MPMM, size: 'medium', creatureType: 'Humanoid', speed: { walk: 30 }, description: 'Elves shaped by the Shadowfell and bound to the Raven Queen.',
+    abilityBonuses: {}, choices: [choice('asi', 'Ability increases (+2/+1 or +1/+1/+1)', 'ability-split', 3)],
+    traits: [
+      dv(),
+      t('fey-ancestry', 'Fey Ancestry', 'Advantage on saves against being charmed; magic can’t put you to sleep.', { effects: [eff('fey-ancestry', [adv('save:all', 'against being charmed')])] }),
+      t('keen-senses', 'Keen Senses', 'Proficiency in Perception.', { grants: { skills: ['perception'] } }),
+      t('shadar-kai-trance', 'Trance', 'You remain conscious during a four-hour trance that completes a long rest; magic cannot put you to sleep. After each trance, choose two weapon or tool proficiencies until the next long rest.', { choices: [choice('proficiencies', 'Trance proficiencies (change after a long rest)', 'options', 2, { options: [
+        ...'club dagger greatclub handaxe javelin light-hammer mace quarterstaff sickle spear crossbow-light dart shortbow sling battleaxe flail glaive greataxe greatsword halberd lance longsword maul morningstar pike rapier scimitar shortsword trident war-pick warhammer whip blowgun crossbow-hand crossbow-heavy longbow net'.split(' ').map((id) => ({ id: `trance-${id}`, name: id.replaceAll('-', ' '), grants: { weapons: [id] } })),
+        ...ALL_TOOLS.map((name) => ({ id: `trance-${name.toLowerCase().replace(/[^a-z]+/g, '-')}`, name, grants: { tools: [name] } })),
+      ] })] }),
+      t('necrotic-resistance', 'Necrotic Resistance', 'You have resistance to necrotic damage.', { grants: { resistances: ['necrotic'] } }),
+      t('blessing-of-the-raven-queen', 'Blessing of the Raven Queen', 'Bonus action: teleport up to 30 ft to an unoccupied space you can see. Proficiency bonus times per long rest. From 3rd level, you also gain resistance to all damage until the start of your next turn when you teleport.', { activation: 'bonus', resource: res('blessing-of-the-raven-queen', 'Blessing of the Raven Queen', 'prof', 'long') }),
+      t('shadar-kai-languages', 'Languages', 'Common and one other language.', { grants: { languages: ['Common'] }, choices: [langChoice()] }),
+    ],
+    details: { age: 'Elven lifespan: up to about 750 years.', height: "5' – 6'", weight: '~140 lb' },
+  }),
+  race({
+    id: 'reborn', name: 'Reborn', source: { book: 'VRGtR', kind: 'summary' }, size: 'medium', sizeOptions: ['small', 'medium'], creatureType: 'Humanoid', speed: { walk: 30 }, description: 'Souls who died and returned to life, carrying echoes of a past existence.',
+    abilityBonuses: {}, choices: [choice('asi', 'Ability increases (+2/+1 or +1/+1/+1)', 'ability-split', 3)],
+    traits: [
+      t('deathless-nature', 'Deathless Nature', 'Resist poison damage; advantage against disease and poison, and on death saves. You need no food, drink, breath, or sleep; magic cannot put you to sleep. Four conscious, inactive hours complete a long rest.', { grants: { resistances: ['poison'] }, effects: [eff('deathless-nature', [adv('save:all', 'against disease or poison'), adv('save:all', 'death saving throws')])] }),
+      t('ancestral-legacy', 'Ancestral Legacy', 'Choose two skill proficiencies. If replacing a race during play, you can instead retain its skill proficiencies and climbing, flying or swimming speeds; record those retained traits as custom features.', { choices: [choice('legacy', 'Ancestral Legacy', 'options', 1, { options: [
+        { id: 'new-skills', name: 'Two skills', features: [t('reborn-skills', 'Past-Life Skills', 'Gain two skill proficiencies.', { choices: [choice('skills', 'Skills', 'skill', 2)] })] },
+        { id: 'retained-ancestry', name: 'Retain previous ancestry (manual)', description: 'Keep only the previous race’s skill proficiencies and climbing, flying or swimming speeds. Record them as custom features.', effects: [{ id: 'retained-ancestry', manual: true, description: 'Record retained racial skills and climbing, flying or swimming speeds as custom features.' }] },
+      ] })] }),
+      t('knowledge-from-a-past-life', 'Knowledge from a Past Life', 'When you make an ability check that uses a skill, you can roll 1d6 right after seeing the d20 and add it to the check. Proficiency bonus times per long rest.', { resource: res('knowledge-from-a-past-life', 'Knowledge from a Past Life', 'prof', 'long'), effects: [{ id: 'knowledge-from-a-past-life', trigger: 'on-use', outcomes: [{ kind: 'bonus', dice: '1d6', text: 'Add to the triggering skill check.' }] }] }),
+      t('reborn-languages', 'Languages', 'Common and one other language.', { grants: { languages: ['Common'] }, choices: [langChoice()] }),
+    ],
+    details: { age: 'Same as your previous life.', height: 'As in your previous life.', weight: 'As in your previous life.' },
   }),
   race({
     id: 'custom-lineage', name: 'Custom Lineage', source: { book: 'TCoE', kind: 'summary' }, size: 'medium', sizeOptions: ['small', 'medium'], speed: { walk: 30 }, description: 'Build your own origin: +2 to one ability, a feat, and darkvision or a skill.',

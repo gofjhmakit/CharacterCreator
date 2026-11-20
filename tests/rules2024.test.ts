@@ -17,12 +17,12 @@ describe('2024 content integrity', () => {
     const w = issues.filter((i) => i.level === 'warning');
     expect(w, JSON.stringify(w.slice(0, 30), null, 1)).toEqual([]);
   });
-  it('covers 12 classes, 48 subclasses, 9 species, 16 backgrounds', () => {
-    expect(db24.classes.size).toBe(12);
-    expect(db24.subclasses.size).toBe(48);
-    expect(db24.races.size).toBe(9);
+  it('covers revised content plus explicit legacy-compatible options', () => {
+    expect(db24.classes.size).toBe(13);
+    expect(db24.subclasses.size).toBe(117);
+    expect(db24.races.size).toBe(13);
     expect(db24.backgrounds.size).toBe(16);
-    for (const c of db24.classes.values()) expect(db24.subclassesFor(c.id).length, c.id).toBe(4);
+    for (const c of db24.classes.values()) expect(db24.subclassesFor(c.id).length, c.id).toBeGreaterThanOrEqual(4);
     expect(db24.items.get('longsword')?.weapon?.mastery).toBe('sap');
     // 2014 SRD items without a 2024 counterpart are ported (tagged), renamed ones are not duplicated
     expect(db24.items.get('mi-belt-of-giant-strength-hill')?.tags).toContain('from-2014');
