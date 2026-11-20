@@ -179,6 +179,62 @@ describe('Artificer spell editing and casting', () => {
     expect(availableSpells(derived.casters[0], derived, [saved], c)).toEqual([saved]);
   });
 
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('adds and prepares Greater Restoration through the picker without losing Chemical Mastery in %s', (ruleset) => {
+    const subclass = ruleset === 'dnd5e-2024' ? 'alchemist-legacy-2024' : 'alchemist';
+    const c = make({ ruleset, classes: [{ id: 'artificer', level: 17, sub: subclass }] });
+    const render = () => root.render(createElement(RulesetProvider, { value: ruleset }, createElement(SpellsTab, {
+      ch: c, d: d(c), set: (recipe) => { recipe(c); render(); }, replace: vi.fn(),
+    })));
+    const openPicker = () => {
+      click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Add / prepare spells'));
+      const level = document.querySelector<HTMLSelectElement>('[role="dialog"] select[aria-label="Level"]')!;
+      act(() => { level.value = '5'; level.dispatchEvent(new Event('change', { bubbles: true })); });
+    };
+    const pickerRow = (name: string) => [...document.querySelectorAll('[role="dialog"] tr')].find((row) => row.querySelector('button')?.textContent === name);
+    act(render);
+    openPicker();
+    click([...pickerRow('Greater Restoration')?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Add'));
+    expect(c.spells.entries.find((spell) => spell.spellId === 'greater-restoration')).toMatchObject({ classId: 'artificer', source: 'class', prepared: false });
+    const level = document.querySelector<HTMLSelectElement>('[role="dialog"] select[aria-label="Level"]')!;
+    act(() => { level.value = '3'; level.dispatchEvent(new Event('change', { bubbles: true })); });
+    expect(pickerRow('Gaseous Form')?.textContent).toContain('granted');
+    expect([...pickerRow('Gaseous Form')?.querySelectorAll('button') ?? []].some((button) => button.textContent === 'Add')).toBe(false);
+    click([...document.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent === 'Done'));
+    const normalRow = [...container.querySelectorAll('tr')].find((row) => row.textContent?.includes('Greater Restoration') && !row.textContent.includes('Innate'))!;
+    click(normalRow.querySelector('input[type="checkbox"]'));
+    expect(c.spells.entries.find((spell) => spell.spellId === 'greater-restoration')?.prepared).toBe(true);
+    const resourceId = `spell-use:${subclass}:greater-restoration`;
+    const innate = () => d(c).spells.find((spell) => spell.spellId === 'greater-restoration' && spell.kind === 'innate');
+    expect(innate()?.uses).toMatchObject({ resourceId, max: 1, used: 0 });
+    click([...normalRow.querySelectorAll('button')].find((button) => button.textContent === 'Cast'));
+    expect(document.querySelector<HTMLSelectElement>('[role="dialog"] select')?.value).toBe('s5');
+    click([...document.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent === 'Cast'));
+    expect(c.spells.slotsUsed[5]).toBe(1);
+    expect(innate()?.uses?.used).toBe(0);
+    openPicker();
+    click([...pickerRow('Greater Restoration')?.querySelectorAll('button') ?? []].find((button) => button.textContent?.startsWith('Added')));
+    expect(c.spells.entries.some((spell) => spell.spellId === 'greater-restoration')).toBe(false);
+    expect(innate()?.uses).toMatchObject({ resourceId, max: 1, used: 0 });
+  });
+
+  it('lets a wizard learn spells supplied by another class or an item', () => {
+    let c = make({ classes: [{ id: 'wizard', level: 1 }, { id: 'cleric', level: 3, sub: 'light' }] });
+    c = addItem(c, db.items.get('mi-wand-of-magic-missiles')!);
+    c.inventory[0].equipped = true;
+    const render = () => root.render(createElement(SpellsTab, {
+      ch: c, d: d(c), set: (recipe) => { recipe(c); render(); }, replace: vi.fn(),
+    }));
+    act(render);
+    click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Add to spellbook'));
+    for (const name of ['Burning Hands', 'Magic Missile']) {
+      const row = [...document.querySelectorAll('[role="dialog"] tr')].find((row) => row.querySelector('button')?.textContent === name);
+      click([...row?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Add'));
+    }
+    expect(c.spells.entries.filter((spell) => spell.classId === 'wizard' && spell.inSpellbook).map((spell) => spell.spellId)).toEqual(['burning-hands', 'magic-missile']);
+    expect(d(c).spells.find((spell) => spell.spellId === 'burning-hands' && spell.classId === 'cleric')?.alwaysPrepared).toBe(true);
+    expect(d(c).spells.find((spell) => spell.spellId === 'magic-missile' && spell.charges)?.charges).toBeDefined();
+  });
+
   it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('casts Chemical Mastery separately from a prepared spell in %s', (ruleset) => {
     const subclass = ruleset === 'dnd5e-2024' ? 'alchemist-legacy-2024' : 'alchemist';
     const c = make({ ruleset, classes: [{ id: 'artificer', level: 19, sub: subclass }] });

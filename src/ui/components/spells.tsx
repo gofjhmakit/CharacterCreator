@@ -146,7 +146,7 @@ export function SpellPicker({ ch, d, cv, onAdd, onRemove }: { ch: Character; d: 
   const className = db.classes.get(cv.classId)?.name ?? cv.name;
   const classOptions = useMemo(() => [...new Set(all.flatMap((x) => x.classes))].sort(), [all]);
   const owned = new Set(ch.spells.entries.filter((e) => e.classId === cv.classId).map((e) => e.spellId));
-  const granted = new Set(d.spells.filter((s) => s.granted).map((s) => s.spellId));
+  const granted = new Set(d.spells.filter((s) => s.granted && s.classId === cv.classId && !s.uses && !s.charges).map((s) => s.spellId));
   let list = pool.filter((s) => (lvl === 'all' || s.level === lvl) && (school === 'all' || s.school === school) && (conc === 'any' || (conc === 'yes') === s.concentration) && (!ritual || s.ritual) && matchesTime(s.castingTime, time));
   list = q ? fuzzySearch(q, list, (s) => ({ id: s.id, name: s.name, keywords: [s.school, s.castingTime, ...(s.damageTypes ?? []), ...(s.tags ?? [])] })).map((h) => h.item) : list.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   return (
