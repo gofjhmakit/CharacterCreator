@@ -1,7 +1,24 @@
 // Explicit compatibility copies: retain book provenance, never mutate 2014 definitions.
-import type { ChoiceDef, FeatureDef, SubclassDef } from '@/types/content';
+import type { ChoiceDef, FeatureDef, Grants, SubclassDef } from '@/types/content';
 import { RACES } from '../data/races';
 import { ARTIFICER_CLASS } from '../data/artificer';
+
+function compatibleWeapons(grants: Grants | undefined): Grants | undefined {
+  if (!grants?.weapons) return grants;
+  const ids: Record<string, string> = { 'crossbow-light': 'light-crossbow', 'crossbow-hand': 'hand-crossbow', 'crossbow-heavy': 'heavy-crossbow' };
+  return { ...grants, weapons: grants.weapons.map((id) => ids[id] ?? id) };
+}
+
+function compatibleSpeciesFeature(feature: FeatureDef): FeatureDef {
+  return {
+    ...feature, grants: compatibleWeapons(feature.grants),
+    choices: feature.choices?.map((choice) => ({
+      ...choice, options: choice.options?.map((option) => ({
+        ...option, grants: compatibleWeapons(option.grants), features: option.features?.map(compatibleSpeciesFeature),
+      })),
+    })),
+  };
+}
 
 export const LEGACY_SPECIES_2024 = RACES.filter((race) => ['half-elf', 'shadar-kai', 'reborn'].includes(race.id)).map((race) => ({
   ...race,
@@ -10,7 +27,7 @@ export const LEGACY_SPECIES_2024 = RACES.filter((race) => ['half-elf', 'shadar-k
   description: `${race.description} Legacy species adapted for 2024: ability increases and languages come from your background and origin, not this species.`,
   abilityBonuses: {},
   choices: race.choices?.filter((choice) => !['ability', 'ability-split', 'language'].includes(choice.kind)),
-  traits: race.traits.filter((trait) => !trait.id.endsWith('-languages')),
+  traits: race.traits.filter((trait) => !trait.id.endsWith('-languages')).map(compatibleSpeciesFeature),
 }));
 
 export const ARTIFICER_2024 = {
@@ -65,8 +82,8 @@ export function legacySubclasses2024(legacy: SubclassDef[], revised: SubclassDef
       id: `${subclass.id}-legacy-2024`,
       ruleset: 'dnd5e-2024',
       name: `${subclass.name} (Legacy)`,
-      description: `${focusText(subclass.description)} Legacy option adapted for 2024: early subclass features arrive at level 3; ki costs use Focus Points. Other mechanics retain their sourcebook summaries.`,
-      features: subclass.features.map(compatibleFeature),
+      description: `${focusText(subclass.description)} Legacy option adapted for 2024: early subclass features arrive at level 3; ki costs use Focus Points. Cleric Divine Strike and Potent Spellcasting are replaced by the class’s Blessed Strikes. Other mechanics retain their sourcebook summaries.`,
+      features: subclass.features.filter((feature) => subclass.classId !== 'cleric' || !['Divine Strike', 'Potent Spellcasting'].includes(feature.name)).map(compatibleFeature),
       spells: subclass.spells ? spells : undefined,
     };
   });

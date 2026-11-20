@@ -68,12 +68,80 @@ describe('bundled content', () => {
       expect(armorer.resources.find((x) => x.id === 'infused-items')?.max).toBe(5);
       expect(armorer.proficiencies.armor).toContain('Heavy armor');
       expect([10, 14, 18].map((level) => alchemist(level).attunement.limit)).toEqual([4, 5, 6]);
-      expect(alchemist(14).casters[0].cantripsKnown).toBe(3);
-      expect(alchemist(15).casters[0].cantripsKnown).toBe(4);
+      expect(alchemist(13).casters[0].cantripsKnown).toBe(3);
+      expect(alchemist(14).casters[0].cantripsKnown).toBe(4);
+    });
+
+    it('offers replacement proficiencies for duplicate specialist tools and Royal Envoy', () => {
+      for (const [specialist, tool, featureId] of [
+        ['alchemist', "Alchemist's supplies", 'alchemist-tool-proficiency'],
+        ['armorer', "Smith's tools", 'tools-of-the-trade'],
+        ['artillerist', "Woodcarver's tools", 'artillerist-tool-proficiency'],
+        ['battle-smith', "Smith's tools", 'battle-smith-tool-proficiency'],
+      ]) {
+        const c = make({ ruleset, classes: [{ id: 'artificer', level: 3, sub: sub(specialist) }], choices: {
+          'class:artificer:tools': [tool],
+          [`subclass:${sub(specialist)}:${featureId}:replacement-tool`]: ["Brewer's supplies"],
+        } });
+        const r = d(c);
+        expect(r.proficiencies.tools).toEqual(expect.arrayContaining([tool, "Brewer's supplies"]));
+        expect(r.choices.find((choice) => choice.key.endsWith('replacement-tool'))?.def.optional).toBe(true);
+      }
+      const r = d(make({ ruleset, background: ruleset === 'dnd5e-2014' ? 'noble' : 'merchant', classes: [{ id: 'fighter', level: 7, sub: sub('purple-dragon-knight') }], choices: {
+        [`subclass:${sub('purple-dragon-knight')}:royal-envoy:replacement-skill`]: ['insight'],
+      } }));
+      expect(r.skills.persuasion.prof).toBe(2);
+      expect(r.skills.insight.prof).toBe(1);
+      expect(r.choices.find((choice) => choice.key.endsWith('replacement-skill'))?.def.optional).toBe(true);
+    });
+
+    it('applies Infiltrator benefits only with active armor and removes them for Guardian', () => {
+      const c = make({ ruleset, classes: [{ id: 'artificer', level: 3, sub: sub('armorer') }], equip: ['scale-mail'], choices: {
+        [`subclass:${sub('armorer')}:armor-model:model`]: ['infiltrator'],
+      } });
+      expect(d(c).speed.walk.value).toBe(30);
+      c.combat.toggles['infiltrator-armor'] = true;
+      expect(d(c).speed.walk.value).toBe(35);
+      expect(d(c).skills.stealth.advantage).toHaveLength(1);
+      expect(d(c).skills.stealth.disadvantage).toHaveLength(1);
+      expect(d(c).skills.stealth.mode).toBe('normal');
+      c.inventory[0].equipped = false;
+      expect(d(c).speed.walk.value).toBe(30);
+      expect(d(c).skills.stealth.advantage).toHaveLength(0);
+      c.inventory[0].equipped = true;
+      c.choices[`subclass:${sub('armorer')}:armor-model:model`] = ['guardian'];
+      expect(d(c).speed.walk.value).toBe(30);
+      expect(d(c).skills.stealth.advantage).toHaveLength(0);
     });
   });
 
   describe('ruleset-specific additions', () => {
+    it('translates all Shadar-kai crossbow training without modifying 2014 grants', () => {
+      for (const [oldId, newId] of [['crossbow-light', 'light-crossbow'], ['crossbow-hand', 'hand-crossbow'], ['crossbow-heavy', 'heavy-crossbow']]) {
+        for (const ruleset of ['dnd5e-2014', 'dnd5e-2024'] as const) {
+          const c = make({ ruleset, race: 'shadar-kai', classes: [{ id: 'wizard', level: 1 }], equip: [ruleset === 'dnd5e-2014' ? oldId : newId], choices: {
+            'race:shadar-kai-trance:proficiencies': [`trance-${oldId}`],
+          } });
+          expect(d(c).attacks.find((attack) => attack.kind === 'weapon')?.proficient).toBe(true);
+        }
+      }
+    });
+
+    it('replaces legacy cleric damage features with the Blessed Strikes selection', () => {
+      for (const subclass of db24.subclassesFor('cleric').filter((s) => s.id.endsWith('-legacy-2024'))) {
+        expect(subclass.features.filter((f) => ['Divine Strike', 'Potent Spellcasting'].includes(f.name))).toEqual([]);
+      }
+      for (const [subclass, legacyFeature] of [['death', 'Divine Strike'], ['arcana', 'Potent Spellcasting']]) {
+        expect(db.subclasses.get(subclass)?.features.some((f) => f.name === legacyFeature)).toBe(true);
+        const c = make({ ruleset: 'dnd5e-2024', classes: [{ id: 'cleric', level: 8, sub: `${subclass}-legacy-2024` }], equip: ['mace'], choices: {
+          'class:cleric:cleric-blessed-strikes:strikes': ['bs-divine-strike'],
+        } });
+        expect(d(c).attacks[0].riders.filter((rider) => rider.label === 'Divine Strike')).toHaveLength(1);
+        c.choices['class:cleric:cleric-blessed-strikes:strikes'] = ['bs-potent'];
+        expect(d(c).attacks[0].riders.filter((rider) => rider.label === 'Divine Strike')).toHaveLength(0);
+      }
+    });
+
     it('recognizes Shadar-kai as elves for Elven Accuracy', () => {
       const c = make({ race: 'shadar-kai' });
       expect(checkPrerequisite(db.feats.get('elven-accuracy')!.prerequisite, c, d(c)).ok).toBe(true);

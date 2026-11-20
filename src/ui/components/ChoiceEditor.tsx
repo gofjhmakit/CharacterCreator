@@ -16,7 +16,10 @@ interface Props { cv: ChoiceView; ch: Character; d: Derived; onChange: (values: 
 export function choiceComplete(cv: ChoiceView): boolean {
   if (cv.def.optional) return true;
   if (cv.def.kind === 'asi') return cv.selected.length >= 1 && (cv.selected[0].startsWith('feat:') || cv.selected.length >= 2);
-  if (cv.def.kind === 'ability-split') return cv.selected.length >= 3;
+  if (cv.def.kind === 'ability-split') {
+    const from: readonly string[] = cv.def.from?.length ? cv.def.from : ABILITIES;
+    return cv.selected.length === 3 && cv.selected.every((a) => from.includes(a)) && new Set(cv.selected).size >= 2;
+  }
   return cv.selected.length >= cv.count;
 }
 
@@ -165,15 +168,15 @@ function AbilitySplit({ cv, d, onChange }: { cv: ChoiceView; d: Derived; onChang
     <div className="stack">
       <div className="btn-group">
         <button className={`small ${mode === '21' ? 'on' : ''}`} onClick={() => { setMode('21'); onChange([]); }}>+2 and +1</button>
-        <button className={`small ${mode === '111' ? 'on' : ''}`} onClick={() => { setMode('111'); onChange([...from]); }}>+1 to all three</button>
+        <button className={`small ${mode === '111' ? 'on' : ''}`} onClick={() => { setMode('111'); onChange(from.length === 3 ? [...from] : []); }}>+1 to three</button>
       </div>
       {mode === '21' ? (
         <div className="row">
           <label className="row tight small">+2 to <select value={two ?? ''} onChange={(e) => { const a = e.target.value; const o = one && one !== a ? one : from.find((x) => x !== a)!; onChange(a ? [a, a, o] : []); }} style={{ width: 'auto' }}><option value="">—</option>{from.map((a) => <option key={a} value={a}>{show(a)}</option>)}</select></label>
           <label className="row tight small">+1 to <select value={one ?? ''} disabled={!two} onChange={(e) => two && onChange([two, two, e.target.value])} style={{ width: 'auto' }}>{from.filter((a) => a !== two).map((a) => <option key={a} value={a}>{show(a)}</option>)}</select></label>
         </div>
-      ) : <div className="small">{from.map((a) => `${a.toUpperCase()} +1`).join(', ')}</div>}
-      <span className="small muted">2024 rules: no score can go above 20 this way.</span>
+      ) : <div className="row">{from.map((a) => <label key={a} className="check small"><input type="checkbox" checked={sel.includes(a)} disabled={!sel.includes(a) && sel.length >= 3} onChange={() => onChange(toggle(sel, a, 3))} />{show(a)} +1</label>)}</div>}
+      <span className="small muted">No score can go above 20 this way.</span>
     </div>
   );
 }
