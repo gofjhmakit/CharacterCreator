@@ -32,10 +32,15 @@ export function FeaturesTab({ ch, d, set }: TabProps) {
   const match = (f: ActiveFeature) => !q || `${f.def.name} ${f.def.description}`.toLowerCase().includes(q.toLowerCase());
 
   const useEffect_ = (f: ActiveFeature, e: Effect) => {
-    const vars = d.varsFor(f.classId);
-    for (const o of [...(e.outcomes ?? []), ...(e.save?.onFailure ?? [])]) if (o.dice && (o.kind === 'heal' || o.kind === 'damage' || o.kind === 'temp-hp')) roller.expr(`${e.name ?? f.def.name}`, expandTemplate(o.dice, vars), o.kind === 'heal' ? 'healing' : 'damage');
     const resId = e.consumes?.resourceId ?? f.def.resource?.id ?? f.def.usesResource;
     const r = resId ? d.resources.find((x) => x.id === resId) : undefined;
+    if (r && r.remaining < (e.consumes?.amount ?? 1)) return;
+    const vars = d.varsFor(f.classId);
+    for (const o of [...(e.outcomes ?? []), ...(e.save?.onFailure ?? [])]) {
+      if (!o.dice || !['heal', 'damage', 'temp-hp', 'bonus', 'penalty'].includes(o.kind)) continue;
+      const kind = o.kind === 'heal' ? 'healing' : o.kind === 'bonus' || o.kind === 'penalty' ? 'custom' : 'damage';
+      if (!roller.expr(`${e.name ?? f.def.name}`, expandTemplate(o.dice, vars), kind)) return;
+    }
     if (r && r.remaining > 0) set((c) => { c.resources[r.id] = { ...(c.resources[r.id] ?? {}), used: r.used + (e.consumes?.amount ?? 1) }; }, `Used ${e.name ?? f.def.name}`);
   };
 

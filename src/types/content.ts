@@ -38,7 +38,7 @@ export type ModifierTarget =
   | `ability:${Ability}`       // ability score bonus
   | `ability-set:${Ability}`   // ability score becomes at least N (Belt of Giant Strength etc.)
   | `ability-max:${Ability}`   // raises the ability maximum (e.g. Barbarian capstone to 24)
-  | `save:${Ability}` | 'save:all'
+  | `save:${Ability}` | 'save:all' | 'save:death'
   | `skill:${SkillId}` | 'check:all' | `check:${Ability}`
   | `passive:${SkillId}`
   | 'initiative'
@@ -94,7 +94,8 @@ export interface Modifier {
 
 export type Requirement =
   | 'armored' | 'unarmored' | 'no-shield' | 'shield' | 'no-heavy-armor' | 'not-heavy-armor-equipped'
-  | 'wielding-melee' | 'one-handed-melee-only' | 'light-or-no-armor' | 'no-medium-heavy-armor' | 'str-attack';
+  | 'wielding-melee' | 'one-handed-melee-only' | 'light-or-no-armor' | 'no-medium-heavy-armor' | 'str-attack'
+  | 'conscious' | 'not-incapacitated';
 
 export type Trigger =
   | 'passive' | 'on-attack' | 'on-hit' | 'on-crit' | 'on-damage-taken' | 'on-use'

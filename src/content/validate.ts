@@ -7,7 +7,7 @@ import { isValidDice } from '@/dice/dice';
 
 export interface ContentIssue { level: 'error' | 'warning'; where: string; message: string }
 
-const MOD_TARGET_RE = /^(ac|ac-formula|attack|damage|extra-damage|initiative|hp-max|hp-per-level|spell-attack|spell-dc|crit-range|damage-reduction|carry-multiplier|attunement-slots|check:all|save:all|speed:all|resistance:all-nonmagical-bps|prof:half-unproficient-checks|prof:half-unproficient-initiative|(ability|ability-set|ability-max|save|check):(str|dex|con|int|wis|cha)|(skill|passive|prof:skill|expertise:skill):[a-z-]+|prof:save:(str|dex|con|int|wis|cha)|speed:(walk|fly|swim|climb|burrow)|(resistance|immunity|vulnerability):[a-z]+|condition-immunity:[a-z]+|sense:.+|resource-max:.+|flag:.+)$/;
+const MOD_TARGET_RE = /^(ac|ac-formula|attack|damage|extra-damage|initiative|hp-max|hp-per-level|spell-attack|spell-dc|crit-range|damage-reduction|carry-multiplier|attunement-slots|check:all|save:all|save:death|speed:all|resistance:all-nonmagical-bps|prof:half-unproficient-checks|prof:half-unproficient-initiative|(ability|ability-set|ability-max|save|check):(str|dex|con|int|wis|cha)|(skill|passive|prof:skill|expertise:skill):[a-z-]+|prof:save:(str|dex|con|int|wis|cha)|speed:(walk|fly|swim|climb|burrow)|(resistance|immunity|vulnerability):[a-z]+|condition-immunity:[a-z]+|sense:.+|resource-max:.+|flag:.+)$/;
 
 export function isValidModifierTarget(t: string): t is ModifierTarget {
   return MOD_TARGET_RE.test(t);

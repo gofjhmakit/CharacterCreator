@@ -2,7 +2,7 @@
 // All functions are pure: they return a new Character (structuredClone) and never mutate input.
 
 import type { Character, InventoryItem } from '@/types/character';
-import type { Derived } from './derive';
+import type { Breakdown, Derived } from './derive';
 import { rollExpression, rollD20, type Rng, cryptoRng, type RollResult } from '@/dice/dice';
 import type { Recharge } from '@/types/core';
 
@@ -84,9 +84,22 @@ export function setTempHp(ch: Character, amount: number, replace = false): Chara
 
 export interface DeathSaveOutcome { character: Character; roll: RollResult; result: 'success' | 'failure' | 'crit-success' | 'crit-fail'; status: 'stable' | 'dead' | 'revived' | 'dying' }
 
-export function rollDeathSave(ch: Character, rng: Rng = cryptoRng, modifier = 0): DeathSaveOutcome {
+export function rollDeathSave(ch: Character, rng: Rng = cryptoRng, modifier: number | Breakdown = 0): DeathSaveOutcome {
   const c = clone(ch);
-  const roll = rollD20(modifier, { label: 'Death saving throw', kind: 'death-save', rng });
+  const roll = rollD20(typeof modifier === 'number' ? modifier : modifier.total, { label: 'Death saving throw', kind: 'death-save', rng, mode: typeof modifier === 'number' ? 'normal' : modifier.mode });
+  if (typeof modifier !== 'number') {
+    const spent = new Set<string>();
+    for (const part of modifier.parts.filter((part) => part.dice)) {
+      const extra = rollExpression(part.dice!, { label: part.label, rng });
+      for (const term of extra.terms) term.term.label = part.label;
+      roll.terms.push(...extra.terms);
+      roll.total += extra.total;
+      roll.notes = [...(roll.notes ?? []), `${part.label}: ${extra.total} (${part.dice})`];
+      if (part.source?.kind === 'temp') spent.add(part.source.id);
+    }
+    c.effects = c.effects.filter((effect) => !effect.oneShot || !spent.has(effect.id));
+    if (modifier.conditional.length) roll.notes = [...(roll.notes ?? []), `Situational: ${modifier.conditional.map((part) => `${part.label} (${part.condition})`).join('; ')}`];
+  }
   const nat = roll.natural!;
   let result: DeathSaveOutcome['result'];
   let status: DeathSaveOutcome['status'] = 'dying';

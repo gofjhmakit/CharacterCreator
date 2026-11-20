@@ -78,6 +78,35 @@ describe('racial features', () => {
   });
 });
 
+describe('walk-relative movement', () => {
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('applies exhaustion once to granted and toggled speeds in %s', (ruleset) => {
+    const sub = (id: string) => ruleset === 'dnd5e-2024' ? `${id}-legacy-2024` : id;
+    const c = make({ ruleset, classes: [{ id: 'cleric', level: 17, sub: sub('tempest') }] });
+    c.custom.features.push({ id: 'walking-bonus', name: 'Walking bonus', description: '', effects: [{ id: 'walking-bonus', modifiers: [{ target: 'speed:walk', value: 10 }] }] });
+    c.combat.exhaustion = 2;
+    const r = d(c);
+    const expected = ruleset === 'dnd5e-2014' ? 20 : 30;
+    expect(r.speed.walk.value).toBe(expected);
+    expect(r.speed.fly.value).toBe(expected);
+    c.classes[0].subclassId = sub('twilight');
+    c.combat.toggles['steps-of-night'] = true;
+    expect(d(c).speed.fly.value).toBe(expected);
+    c.effects.push({ id: 'fly-spell', name: 'Fly spell', createdAt: '', effect: { id: 'fly-spell', modifiers: [{ target: 'speed:fly', op: 'max', value: 60 }] } });
+    expect(d(c).speed.fly.value).toBe(ruleset === 'dnd5e-2014' ? 30 : 50);
+    c.combat.conditions = ['grappled'];
+    expect(d(c).speed.fly.value).toBe(0);
+  });
+
+  it('applies exhaustion once to Roving swim and climb speeds', () => {
+    const c = make({ ruleset: 'dnd5e-2024', classes: [{ id: 'ranger', level: 6 }] });
+    c.combat.exhaustion = 1;
+    const r = d(c);
+    expect(r.speed.walk.value).toBe(35);
+    expect(r.speed.swim.value).toBe(35);
+    expect(r.speed.climb.value).toBe(35);
+  });
+});
+
 describe('skills, expertise, saves, initiative', () => {
   it('skill proficiency and expertise', () => {
     const c = make({ classes: [{ id: 'rogue', level: 1 }], scores: { dex: 16 }, choices: { 'class:rogue:skills': ['stealth', 'perception', 'acrobatics', 'deception'], 'class:rogue:rogue-expertise-1:expertise': ['stealth', 'perception'] } });
@@ -225,6 +254,15 @@ describe('spellcasting', () => {
     const always = r.spells.filter((s) => s.alwaysPrepared).map((s) => s.spellId);
     expect(always).toEqual(expect.arrayContaining(['faerie-fire', 'sleep', 'moonbeam', 'see-invisibility']));
     expect(always).not.toContain('aura-of-vitality');
+  });
+  it('keeps racial free uses separate when a later domain grant prepares the same spell', () => {
+    const c = make({ race: 'elf', subrace: 'drow', classes: [{ id: 'cleric', level: 3, sub: 'light' }] });
+    const r = d(c);
+    const spells = r.spells.filter((spell) => spell.spellId === 'faerie-fire');
+    expect(spells).toHaveLength(2);
+    expect(spells.find((spell) => spell.kind === 'innate')?.uses).toMatchObject({ max: 1, used: 0 });
+    expect(spells.find((spell) => spell.alwaysPrepared)).toMatchObject({ classId: 'cleric', countsAgainstLimit: false });
+    expect(new Set(spells.map((spell) => spell.key)).size).toBe(2);
   });
   it('FULL table sanity', () => expect(FULL_CASTER_SLOTS[17]).toEqual([4, 3, 3, 3, 2, 1, 1, 1, 1]));
 });

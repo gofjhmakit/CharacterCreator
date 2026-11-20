@@ -175,6 +175,7 @@ export interface Derived {
   classLine: string;
   abilities: Record<Ability, AbilityView>;
   saves: Record<Ability, SaveView>;
+  deathSave: Breakdown;
   skills: Record<SkillId, SkillView>;
   checks: Record<Ability, Breakdown>;
   passives: Record<'perception' | 'investigation' | 'insight', Breakdown>;
@@ -603,7 +604,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   }
   const equippedWeapons = inv.filter((i) => i.equipped && i.item.weapon);
 
-  const reqCtx = { armorWorn, shieldWorn, equippedWeapons };
+  const reqCtx = { armorWorn, shieldWorn, equippedWeapons, activeConditions };
   const meets = (reqs: Requirement[] | undefined, attackCtx?: { weapon?: InventoryItem; ability?: Ability }): boolean => {
     if (!reqs) return true;
     return reqs.every((r) => checkRequirement(r, reqCtx, attackCtx));
@@ -733,6 +734,10 @@ export function derive(ch: Character, db: ContentDB): Derived {
     applyMods(b, ['save:all', `save:${a}`]);
     saves[a] = { ...finalizeBreakdown(b), ability: a, proficient, profSources: saveProfs[a] ?? [] };
   }
+  const deathSave = emptyBreakdown();
+  if (flags.has('prof-all-saves')) deathSave.parts.push({ label: 'Proficiency', value: profBonus });
+  applyMods(deathSave, ['save:all', 'save:death']);
+  finalizeBreakdown(deathSave);
 
   // ------------------------------------------------------------------ skills & checks
   const joat = mods.some((m) => m.mod.target === 'prof:half-unproficient-checks' && !m.mod.condition);
@@ -832,6 +837,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   } else if (ch.settings.encumbrance === 'standard' && carryingPre.status === 'over-capacity') {
     walkParts.push({ label: 'Over carrying capacity (max 5 ft unless pushing/dragging)', value: 5 - walk }); walk = 5;
   }
+  const walkBeforeExhaustion = Math.max(0, walk);
   if (rules.exhaustion === '2014' && ch.combat.exhaustion >= 2) { const h = Math.floor(walk / 2); walkParts.push({ label: 'Exhaustion (speed halved)', value: h - walk }); walk = h; }
   if (rules.exhaustion === '2024' && ch.combat.exhaustion > 0) { const r = 5 * ch.combat.exhaustion; walkParts.push({ label: `Exhaustion (−5 ft × ${ch.combat.exhaustion})`, value: -r }); walk -= r; }
   const zeroSet = mods.find((m) => m.mod.target === 'speed:all' && m.mod.op === 'set' && !m.mod.condition);
@@ -841,12 +847,12 @@ export function derive(ch: Character, db: ContentDB): Derived {
     let v = baseSpeed[mode] ?? 0;
     if (v) parts.push({ label: `${race?.name ?? 'Base'}`, value: v });
     for (const g of speedGrants.filter((g) => g.mode === mode)) {
-      const gv = g.value === 'walk' ? speed.walk.value : g.value;
+      const gv = g.value === 'walk' ? walkBeforeExhaustion : g.value;
       if (gv > v) { parts.push({ label: g.source, value: gv - v }); v = gv; }
     }
     for (const m of speedMods(mode)) {
       const op = m.mod.op ?? 'add';
-      const mv = modValue(m, vars(ownerOf(m)), speed.walk.value);
+      const mv = modValue(m, vars(ownerOf(m)), walkBeforeExhaustion);
       if (op === 'add' && v > 0) { v += mv; parts.push({ label: m.effectName, value: mv, source: m.source }); }
       if (op === 'max' && mv > v) { parts.push({ label: m.effectName, value: mv - v, source: m.source }); v = mv; }
       if (op === 'set') { parts.push({ label: m.effectName, value: mv - v, source: m.source }); v = mv; }
@@ -1004,7 +1010,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   for (const g of grantedSpells) {
     const spell = db.spells.get(g.spellId);
     const key = `grant:${g.source.kind}:${g.source.id}:${g.spellId}`;
-    const existing = spellViews.find((v) => v.spellId === g.spellId && (v.classId === g.ownerClass || !g.ownerClass));
+    const existing = !g.uses && spellViews.find((v) => !v.uses && v.spellId === g.spellId && (v.classId === g.ownerClass || !g.ownerClass));
     if (g.mode === 'expanded-list') continue; // only expands choices; shown in spell browser
     if (existing && g.mode === 'always-prepared') { existing.alwaysPrepared = true; existing.prepared = true; existing.countsAgainstLimit = false; existing.kind = 'always-prepared'; existing.sourceLabel = g.source.label; continue; }
     if (existing) continue;
@@ -1100,7 +1106,7 @@ export function derive(ch: Character, db: ContentDB): Derived {
   const sizeStr = ch.identity.size ?? race?.size ?? 'medium';
 
   return {
-    totalLevel, profBonus, classes, classLine, abilities, saves, skills, checks, passives, initiative, ac, speed,
+    totalLevel, profBonus, classes, classLine, abilities, saves, deathSave, skills, checks, passives, initiative, ac, speed,
     hp: { max: hpMax, parts: hpParts, current: Math.min(ch.combat.hpCurrent, hpMax), temp: ch.combat.hpTemp, override: hpOverride },
     hitDice: [...diceMap.values()].sort((a, b) => b.die - a.die),
     senses: Object.entries(senses).map(([name, s]) => ({ name, range: s.range, source: s.source })),
@@ -1170,9 +1176,11 @@ export function itemEffectActive(e: Effect, it: InventoryItem): boolean {
   }
 }
 
-function checkRequirement(r: Requirement, ctx: { armorWorn?: InventoryItem; shieldWorn?: InventoryItem; equippedWeapons: InventoryItem[] }, attack?: { weapon?: InventoryItem; ability?: Ability }): boolean {
+function checkRequirement(r: Requirement, ctx: { armorWorn?: InventoryItem; shieldWorn?: InventoryItem; equippedWeapons: InventoryItem[]; activeConditions: Set<ConditionId> }, attack?: { weapon?: InventoryItem; ability?: Ability }): boolean {
   const cat = ctx.armorWorn?.item.armor?.category;
   switch (r) {
+    case 'conscious': return !ctx.activeConditions.has('unconscious');
+    case 'not-incapacitated': return !ctx.activeConditions.has('incapacitated');
     case 'armored': return !!ctx.armorWorn;
     case 'unarmored': return !ctx.armorWorn;
     case 'no-shield': return !ctx.shieldWorn;

@@ -143,6 +143,69 @@ describe('combat actions & rests', () => {
     expect(s.combat.deathSaves.successes).toBe(3);
     expect(s.combat.stable).toBe(true);
   });
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('uses Reborn death-save advantage and the kept natural die in %s', (ruleset) => {
+    const c = make({ ruleset, race: 'reborn' });
+    c.combat.hpCurrent = 0;
+    c.combat.conditions = ['unconscious'];
+    const derived = d(c);
+    const success = rollDeathSave(c, scriptedRng([1, 12], [20, 20]), derived.deathSave);
+    expect(success.roll).toMatchObject({ mode: 'advantage', natural: 12, total: 12 });
+    expect(success.character.combat.deathSaves).toEqual({ successes: 1, failures: 0 });
+    const revived = rollDeathSave(c, scriptedRng([1, 20], [20, 20]), derived.deathSave);
+    expect(revived.status).toBe('revived');
+    expect(revived.character.combat.hpCurrent).toBe(1);
+    expect(revived.character.combat.conditions).not.toContain('unconscious');
+    const failed = rollDeathSave(c, scriptedRng([1, 1], [20, 20]), derived.deathSave);
+    expect(failed.character.combat.deathSaves.failures).toBe(2);
+    expect(c.combat.deathSaves).toEqual({ successes: 0, failures: 0 });
+  });
+  it('cancels death-save advantage against exhaustion disadvantage', () => {
+    const c = make({ race: 'reborn' });
+    c.combat.exhaustion = 3;
+    expect(d(c).deathSave.mode).toBe('normal');
+    const result = rollDeathSave(c, scriptedRng([8], [20]), d(c).deathSave);
+    expect(result.roll.terms[0].rolls).toEqual([8]);
+    expect(result.result).toBe('failure');
+  });
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('adds all-save proficiency but no ability modifier to death saves in %s', (ruleset) => {
+    const c = make({ ruleset, race: 'reborn', classes: [{ id: 'monk', level: 14 }], scores: { con: 20, wis: 18 } });
+    expect(d(c).deathSave.total).toBe(5);
+    const result = rollDeathSave(c, scriptedRng([2, 5], [20, 20]), d(c).deathSave);
+    expect(result.roll.total).toBe(10);
+    expect(result.result).toBe('success');
+  });
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)("does not apply an unconscious paladin's own aura to death saves in %s", (ruleset) => {
+    const c = make({ ruleset, race: 'reborn', classes: [{ id: 'paladin', level: 6 }], scores: { cha: 18 } });
+    expect(d(c).deathSave.total).toBe(4);
+    c.combat.hpCurrent = 0;
+    c.combat.conditions = ['unconscious'];
+    expect(d(c).deathSave.total).toBe(0);
+    expect(rollDeathSave(c, scriptedRng([4, 8], [20, 20]), d(c).deathSave).result).toBe('failure');
+    c.combat.conditions = ['stunned'];
+    expect(d(c).deathSave.total).toBe(ruleset === 'dnd5e-2014' ? 4 : 0);
+  });
+  it('applies death-save penalties and dice without changing natural 1/20 outcomes', () => {
+    const c = make({ ruleset: 'dnd5e-2024' });
+    c.combat.exhaustion = 1;
+    c.effects.push({ id: 'resistance', name: 'Resistance', createdAt: '', oneShot: true, effect: { id: 'resistance', modifiers: [{ target: 'save:all', op: 'add', dice: '1d4' }] } });
+    const derived = d(c);
+    const result = rollDeathSave(c, scriptedRng([9, 3], [20, 4]), derived.deathSave);
+    expect(result.roll.total).toBe(10);
+    expect(result.result).toBe('success');
+    expect(result.character.effects).toHaveLength(0);
+    expect(c.effects).toHaveLength(1);
+    expect(rollDeathSave(c, scriptedRng([1, 4], [20, 4]), derived.deathSave).result).toBe('crit-fail');
+    expect(rollDeathSave(c, scriptedRng([20, 1], [20, 4]), derived.deathSave).status).toBe('revived');
+  });
+  it('subtracts active penalty dice from death saves', () => {
+    const c = make();
+    c.effects.push({ id: 'bane', name: 'Bane', createdAt: '', effect: { id: 'bane', modifiers: [{ target: 'save:all', op: 'add', dice: '-1d4' }] } });
+    const result = rollDeathSave(c, scriptedRng([12, 3], [20, 4]), d(c).deathSave);
+    expect(result.roll.total).toBe(9);
+    expect(result.result).toBe('failure');
+    expect(result.roll.terms.at(-1)?.subtotal).toBe(-3);
+    expect(result.character.effects).toHaveLength(1);
+  });
   it('short rest restores short-rest resources and pact slots only', () => {
     let c = make({ classes: [{ id: 'fighter', level: 9 }, { id: 'warlock', level: 2 }], scores: { str: 13, cha: 13 } });
     c = useResource(c, 'second-wind'); c = useResource(c, 'action-surge'); c = useResource(c, 'indomitable');
