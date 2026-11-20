@@ -379,9 +379,26 @@ table.data td.num, table.data th.num { text-align: right; }
 .sheet .panel { padding: 10px; }
 .sheet h3 { font-size: 0.95rem; margin-bottom: 6px; }
 @media print {
+  @page { margin: 12mm; }
   .topbar, .bottom-nav, .tabs, .dice-fab, .dice-tray, .toasts, .no-print, .char-head .head-actions { display: none !important; }
+  html { font-size: 14px; }
   body { background: #fff; color: #000; }
   [data-theme] { --bg: #fff; --panel: #fff; --panel-2: #fff; --ink: #000; --ink-2: #222; --muted: #555; --line: #bbb; --line-2: #888; --gold: #6e5218; --gold-2: #6e5218; }
   .main { max-width: none; padding: 0; }
   .panel { break-inside: avoid; }
+  .app, .sheet, .sheet-background { display: block; }
+  .sheet > *, .sheet-background > * { margin-bottom: 8px; }
+  .sheet { overflow-wrap: anywhere; line-height: 1.3; }
+  .sheet .panel { padding: 8px; }
+  .sheet button { min-height: 0; padding: 0; border: 0; background: transparent; font-size: inherit; }
+  .sheet table.data th, .sheet table.data td { padding: 3px 4px; }
+  .sheet .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .sheet .stat { min-height: 54px; padding: 6px 3px; }
+  .sheet .stat .label { letter-spacing: 0.04em; }
+  .sheet-background { break-before: page; font-size: 10pt; line-height: 1.45; }
+  .sheet-background .small { font-size: inherit; }
+  .sheet-background .panel { break-inside: auto; }
+  .sheet-background h2, .sheet h3 { break-after: avoid; }
+  .sheet .pre { orphans: 3; widows: 3; }
+  .sheet tr, .sheet .stat-strip { break-inside: avoid; }
 }
