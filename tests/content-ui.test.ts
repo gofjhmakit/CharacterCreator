@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChoiceEditor, choiceComplete } from '@/ui/components/ChoiceEditor';
 import { FeaturesTab } from '@/ui/views/tabs/FeaturesTab';
 import { SpellsTab } from '@/ui/views/tabs/SpellsTab';
+import { SheetTab } from '@/ui/views/tabs/SheetTab';
 import { HpPanel } from '@/ui/views/panels';
 import { SpellEditor } from '@/ui/views/ContentEditors';
 import { availableSpells } from '@/ui/components/spells';
@@ -40,6 +41,27 @@ function knowledgeUseButton() {
   const feature = [...container.querySelectorAll('.feature')].find((entry) => entry.querySelector('h4')?.textContent?.includes('Knowledge from a Past Life'));
   return [...(feature?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((button) => button.textContent?.startsWith('Use'));
 }
+
+describe('printable character sheet', () => {
+  it('keeps long background text intact after the gameplay and spellcasting summary', () => {
+    const c = make({ race: 'shadar-kai', background: 'noble', classes: [{ id: 'warlock', level: 1, sub: 'great-old-one' }] });
+    c.identity.appearance = 'A regal cape.\n\nAshen gray skin.';
+    c.personality.traits = 'Quiet and observant.';
+    c.personality.backstory = Array.from({ length: 60 }, (_, i) => `Chapter ${i + 1}: ${'A long journey through the Shadowfell. '.repeat(8)}`).join('\n\n');
+    c.personality.allies = 'Javel and Amira';
+    act(() => root.render(createElement(SheetTab, { ch: c, d: d(c), set: vi.fn(), replace: vi.fn() })));
+    const sheet = container.querySelector('.sheet')!;
+    const background = sheet.querySelector('.sheet-background')!;
+    expect(sheet.lastElementChild).toBe(background);
+    expect([...sheet.querySelectorAll('h3')].find((h) => h.textContent === 'Spellcasting')).toBeTruthy();
+    expect(background.querySelector('.pre')?.textContent).toBe(c.identity.appearance);
+    expect(background.lastElementChild?.querySelector('.pre')?.textContent).toBe(c.personality.backstory);
+    expect(background.textContent).toContain(c.personality.traits);
+    expect(background.textContent).toContain(c.personality.allies);
+    expect(background.querySelector('.grid')).toBeNull();
+    expect(sheet.textContent?.split(c.personality.backstory)).toHaveLength(2);
+  });
+});
 
 describe('flexible racial ability editor', () => {
   it.each(['shadar-kai', 'reborn'])('selects any three distinct abilities for %s', (race) => {

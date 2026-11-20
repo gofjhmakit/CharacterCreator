@@ -1,6 +1,6 @@
 import { useUnits } from '@/ui/units';
 import { useDb } from '@/ui/ruleset';
-// Dense one-page character sheet: covers every field of the official 2014 sheet (pages 1–3) and more. Print-friendly.
+// Compact gameplay summary followed by full-width character background.
 import type { TabProps } from '../CharacterView';
 import { ABILITIES, ABILITY_NAMES, SKILLS, SKILL_IDS, signed } from '@/types/core';
 import { useApp } from '@/state/store';
@@ -40,13 +40,6 @@ export function SheetTab({ ch, d }: TabProps) {
           <div className="panel"><h3>Skills</h3>
             {SKILL_IDS.map((s) => <div key={s} className="row between small"><span>{d.skills[s].prof === 2 ? '◉' : d.skills[s].prof === 1 ? '●' : d.skills[s].prof === 0.5 ? '◐' : '○'} {SKILLS[s].name} <span className="muted">({SKILLS[s].ability.slice(0, 3)})</span></span><button className="small ghost" onClick={() => roller.d20(SKILLS[s].name, d.skills[s])}>{signed(d.skills[s].total)}</button></div>)}
           </div>
-          <div className="panel small"><b>Passive Wisdom (Perception)</b> {d.passives.perception.total} · Investigation {d.passives.investigation.total} · Insight {d.passives.insight.total}</div>
-          <div className="panel small"><h3>Other proficiencies & languages</h3>
-            <div><b>Armor:</b> {d.proficiencies.armor.join(', ') || '—'}</div>
-            <div><b>Weapons:</b> {d.proficiencies.weapons.map(titleCase).join(', ') || '—'}</div>
-            <div><b>Tools:</b> {d.proficiencies.tools.join(', ') || '—'}</div>
-            <div><b>Languages:</b> {d.proficiencies.languages.join(', ') || '—'}</div>
-          </div>
         </div>
         <div className="stack">
           <div className="stat-strip">
@@ -80,20 +73,16 @@ export function SheetTab({ ch, d }: TabProps) {
           </div>
         </div>
         <div className="stack">
-          {(['traits', 'ideals', 'bonds', 'flaws'] as const).map((k) => <div key={k} className="panel small"><h3>{k === 'traits' ? 'Personality traits' : titleCase(k)}</h3><div className="pre">{ch.personality[k] || '—'}</div></div>)}
           <div className="panel small"><h3>Features & traits</h3>
             {d.features.filter((f) => f.source.kind !== 'option').map((f) => <div key={f.key}><b>{f.def.name}</b> <span className="muted">({f.source.label})</span>{(() => { const r = d.resources.find((x) => x.id === f.resourceId); return r ? ` — ${r.remaining}/${r.max >= 99 ? '∞' : r.max}` : ''; })()}</div>)}
           </div>
-        </div>
-      </div>
-      <div className="grid cols-2">
-        <div className="panel small"><h3>Character appearance & details</h3>
-          <div>Age {ch.identity.age || '—'} · Height {ch.identity.height || '—'} · Weight {ch.identity.weight || '—'} · Eyes {ch.identity.eyes || '—'} · Skin {ch.identity.skin || '—'} · Hair {ch.identity.hair || '—'}{ch.identity.deity ? ` · Deity ${ch.identity.deity}` : ''}</div>
-          <div className="pre" style={{ marginTop: 4 }}>{ch.identity.appearance}</div>
-          <h3 style={{ marginTop: 8 }}>Backstory</h3><div className="pre">{ch.personality.backstory || '—'}</div>
-        </div>
-        <div className="panel small"><h3>Allies & organizations</h3><div className="pre">{ch.personality.allies || '—'}</div>
-          <h3 style={{ marginTop: 8 }}>Treasure</h3><div>{ch.notes.treasure.map((t) => t.title).join(', ') || ch.inventory.filter((i) => i.item.category === 'treasure' || i.item.magical).map((i) => i.item.name).join(', ') || '—'}</div>
+          <div className="panel small"><b>Passive Wisdom (Perception)</b> {d.passives.perception.total} · Investigation {d.passives.investigation.total} · Insight {d.passives.insight.total}</div>
+          <div className="panel small"><h3>Other proficiencies & languages</h3>
+            <div><b>Armor:</b> {d.proficiencies.armor.join(', ') || '—'}</div>
+            <div><b>Weapons:</b> {d.proficiencies.weapons.map(titleCase).join(', ') || '—'}</div>
+            <div><b>Tools:</b> {d.proficiencies.tools.join(', ') || '—'}</div>
+            <div><b>Languages:</b> {d.proficiencies.languages.join(', ') || '—'}</div>
+          </div>
         </div>
       </div>
       {(d.casters.length > 0 || d.spells.length > 0) && (
@@ -110,6 +99,17 @@ export function SheetTab({ ch, d }: TabProps) {
           </div>
         </div>
       )}
+      <div className="sheet-background stack">
+        <h2>Character background</h2>
+        <div className="panel small"><h3>Character appearance & details</h3>
+          <div>Age {ch.identity.age || '—'} · Height {ch.identity.height || '—'} · Weight {ch.identity.weight || '—'} · Eyes {ch.identity.eyes || '—'} · Skin {ch.identity.skin || '—'} · Hair {ch.identity.hair || '—'}{ch.identity.deity ? ` · Deity ${ch.identity.deity}` : ''}</div>
+          <div className="pre" style={{ marginTop: 4 }}>{ch.identity.appearance}</div>
+        </div>
+        {(['traits', 'ideals', 'bonds', 'flaws'] as const).map((k) => <div key={k} className="panel small"><h3>{k === 'traits' ? 'Personality traits' : titleCase(k)}</h3><div className="pre">{ch.personality[k] || '—'}</div></div>)}
+        <div className="panel small"><h3>Allies & organizations</h3><div className="pre">{ch.personality.allies || '—'}</div></div>
+        <div className="panel small"><h3>Treasure</h3><div>{ch.notes.treasure.map((t) => t.title).join(', ') || ch.inventory.filter((i) => i.item.category === 'treasure' || i.item.magical).map((i) => i.item.name).join(', ') || '—'}</div></div>
+        <div className="panel small"><h3>Backstory</h3><div className="pre">{ch.personality.backstory || '—'}</div></div>
+      </div>
     </div>
   );
 }
