@@ -255,7 +255,14 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
   const dmg = sp.damage?.bySlot?.[String(castLevel)] ?? (sp.damage?.byCharLevel ? Object.entries(sp.damage.byCharLevel).filter(([k]) => Number(k) <= d.totalLevel).pop()?.[1] : undefined);
   const heal = sp.heal?.[String(castLevel)];
   const healExpr = heal?.replace(/\s*\+\s*MOD/i, s.dc !== undefined ? `+${Math.max(0, (s.dc ?? 8) - 8 - d.profBonus)}` : '');
+  const canCast = choice === 'free' || (choice === 'use' ? !!s.uses && s.uses.used < s.uses.max
+    : choice === 'charges' ? !!s.charges && s.charges.remaining >= s.charges.cost
+    : !!slotOptions.find((option) => option.key === choice)?.ok);
   const doCast = () => {
+    if (!canCast) {
+      toast({ kind: 'error', text: 'No uses, charges, or spell slots remain for this casting option.' });
+      return;
+    }
     set((c) => {
       const o = slotOptions.find((x) => x.key === choice);
       if (o?.pact) c.spells.pactSlotsUsed += 1;
@@ -274,7 +281,7 @@ function CastDialog({ s, ch, d, set, onClose }: { s: SpellView; ch: TabProps['ch
     onClose();
   };
   return (
-    <Modal title={`Cast ${sp.name}`} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={doCast} disabled={slotOptions.length > 0 && choice !== 'free' && choice !== 'use' && !slotOptions.find((o) => o.key === choice)?.ok}>Cast</button></>}>
+    <Modal title={`Cast ${sp.name}`} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={doCast} disabled={!canCast}>Cast</button></>}>
       <div className="stack">
         <SpellMeta s={sp} />
         {sp.level > 0 && (

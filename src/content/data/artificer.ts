@@ -29,8 +29,8 @@ export const ARTIFICER_CLASS: ClassDef = {
   features: [
     f(1, 'magical-tinkering', 'Magical Tinkering', 'Touch a Tiny nonmagical object and give it one of: light 5 ft, a recorded message (6 seconds), a continuous odor or sound, or a static visual effect. INT modifier (min 1) objects at a time.', { manual: true }),
     f(1, 'spellcasting-artificer', 'Spellcasting', 'You prepare INT modifier + half your artificer level (rounded down, min 1) spells from the artificer list. You need thieves’ tools or artisan’s tools as a spellcasting focus, and cast artificer spells as rituals if they have the ritual tag.'),
-    f(2, 'infuse-item', 'Infuse Item', 'At the end of a long rest, infuse mundane items with magical infusions you know. Infusions known: 4 (6 at 6th, 8 at 10th, 10 at 14th, 12 at 18th). Infused items at once: 2 (3 at 6th, 4 at 10th, 5 at 14th, 6 at 18th).', {
-      resource: res('infused-items', 'Infused items', byLevel([[2, 2], [6, 3], [10, 4], [14, 5], [18, 6]]), 'long'), manual: true,
+    f(2, 'infuse-item', 'Infuse Item', 'At the end of a long rest, infuse mundane items with magical infusions you know. Infusions known: 4 (6 at 6th, 8 at 10th, 10 at 14th, 12 at 18th). Infused items at once: 2 (3 at 6th, 4 at 10th, 5 at 14th, 6 at 18th). Track active infusions manually; resting does not end them or clear their count.', {
+      resource: res('infused-items', 'Infused items', byLevel([[2, 2], [6, 3], [10, 4], [14, 5], [18, 6]]), 'manual'), manual: true,
     }),
     f(3, 'artificer-specialist', 'Artificer Specialist', 'Choose an artificer specialist.', { tags: ['subclass-placeholder'], hidden: true }),
     f(3, 'right-tool-for-the-job', 'The Right Tool for the Job', 'Magically create a set of artisan’s tools in an unoccupied space within 5 ft at the end of a short or long rest. They last until you use this feature again.'),

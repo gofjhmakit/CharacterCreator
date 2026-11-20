@@ -4,7 +4,7 @@ import { bundledContent } from '@/content';
 import { validateContentDB } from '@/content/validate';
 import { ARTIFICER_SPELL_LIST } from '@/content/data/artificer';
 import { make, d, db24 } from './helpers';
-import { longRest, useResource } from '@/engine/actions';
+import { longRest, shortRest, useResource } from '@/engine/actions';
 import { checkPrerequisite } from '@/engine/prereq';
 
 describe('bundled content', () => {
@@ -86,6 +86,34 @@ describe('bundled content', () => {
       expect([10, 14, 18].map((level) => alchemist(level).attunement.limit)).toEqual([4, 5, 6]);
       expect(alchemist(13).casters[0].cantripsKnown).toBe(3);
       expect(alchemist(14).casters[0].cantripsKnown).toBe(4);
+    });
+
+    it('preserves active infusions through rests while restoring daily resources', () => {
+      let c = make({ ruleset, classes: [{ id: 'artificer', level: 3, sub: sub('alchemist') }] });
+      c = useResource(useResource(c, 'infused-items', 2), 'experimental-elixir');
+      c = shortRest(c, d(c)).character;
+      expect(d(c).resources.find((resource) => resource.id === 'infused-items')?.remaining).toBe(0);
+      c = longRest(c, d(c)).character;
+      expect(d(c).resources.find((resource) => resource.id === 'infused-items')).toMatchObject({ max: 2, used: 2, remaining: 0 });
+      expect(d(c).resources.find((resource) => resource.id === 'experimental-elixir')?.remaining).toBe(1);
+    });
+
+    it('preserves Chemical Mastery free casts when the spell is also selected', () => {
+      let c = make({ ruleset, classes: [{ id: 'artificer', level: 17, sub: sub('alchemist') }] });
+      c.spells.entries.push({ id: 'selected-restoration', spellId: 'greater-restoration', classId: 'artificer', source: 'class', prepared: true });
+      const r = d(c);
+      const restoration = r.spells.filter((spell) => spell.spellId === 'greater-restoration');
+      expect(restoration).toHaveLength(2);
+      const free = restoration.find((spell) => spell.kind === 'innate')!;
+      expect(free).toMatchObject({ prepared: true, granted: true, countsAgainstLimit: false, uses: { max: 1, used: 0, recharge: 'long' } });
+      expect(restoration.find((spell) => spell.entry)?.countsAgainstLimit).toBe(true);
+      c = useResource(c, free.uses!.resourceId);
+      expect(d(c).spells.find((spell) => spell.key === free.key)?.uses?.used).toBe(1);
+      expect(d(c).spells.find((spell) => spell.spellId === 'heal')?.uses?.used).toBe(0);
+      c.spells.entries[0].prepared = false;
+      expect(d(c).spells.find((spell) => spell.key === free.key)?.prepared).toBe(true);
+      c = longRest(c, d(c)).character;
+      expect(d(c).spells.find((spell) => spell.key === free.key)?.uses?.used).toBe(0);
     });
 
     it('offers replacement proficiencies for duplicate specialist tools and Royal Envoy', () => {
@@ -222,6 +250,20 @@ describe('bundled content', () => {
       expect(r.speed.fly.value).toBe(r.speed.walk.value);
       expect(r.resistances.map((x) => x.type)).toEqual(expect.arrayContaining(['necrotic', 'radiant']));
       expect(r.spells.some((x) => x.spellId === 'light')).toBe(true);
+    });
+
+    it('applies exhaustion once to Aasimar flight relative to walking speed', () => {
+      const c = make({ ruleset: 'dnd5e-2024', race: 'aasimar', classes: [{ id: 'fighter', level: 3 }], choices: {
+        'race:celestial-revelation:form': ['heavenly-wings'],
+      } });
+      c.combat.toggles['heavenly-wings'] = true;
+      for (const exhaustion of [0, 1, 2, 5]) {
+        c.combat.exhaustion = exhaustion;
+        const r = d(c);
+        expect(r.speed.walk.value).toBe(30 - 5 * exhaustion);
+        expect(r.speed.fly.value).toBe(r.speed.walk.value);
+        expect(r.speed.fly.parts.reduce((sum, part) => sum + part.value, 0)).toBe(r.speed.fly.value);
+      }
     });
   });
   it('has no unresolved references', () => {

@@ -6,9 +6,13 @@ import { ChoiceEditor, choiceComplete } from '@/ui/components/ChoiceEditor';
 import { FeaturesTab } from '@/ui/views/tabs/FeaturesTab';
 import { SpellsTab } from '@/ui/views/tabs/SpellsTab';
 import { HpPanel } from '@/ui/views/panels';
+import { SpellEditor } from '@/ui/views/ContentEditors';
+import { availableSpells } from '@/ui/components/spells';
 import { RulesetProvider } from '@/ui/ruleset';
+import { addItem } from '@/engine/inventory';
+import type { SpellDef } from '@/types/content';
 import { useApp } from '@/state/store';
-import { make, d } from './helpers';
+import { make, d, db } from './helpers';
 
 let container: HTMLDivElement;
 let root: Root;
@@ -157,5 +161,81 @@ describe('Conjure Barrage casting', () => {
       expect(useApp.getState().rolls[0]).toMatchObject({ label: 'Conjure Barrage damage', expression: '3d8' });
     }
     expect(useApp.getState().rolls).toHaveLength(7);
+  });
+});
+
+describe('Artificer spell editing and casting', () => {
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('assigns a custom spell to the Artificer list in %s', (ruleset) => {
+    const onSave = vi.fn<(spell: SpellDef) => void>();
+    const initial: SpellDef = { ...db.spells.get('cure-wounds')!, id: 'custom-restoration', name: 'Custom Restoration', classes: [], source: { book: 'Homebrew', kind: 'custom' } };
+    act(() => root.render(createElement(RulesetProvider, { value: ruleset }, createElement(SpellEditor, { initial, onSave, onClose: vi.fn() }))));
+    click([...document.querySelectorAll('label')].find((label) => label.textContent === 'Artificer')?.querySelector('input'));
+    click([...document.querySelectorAll('button')].find((button) => button.textContent === 'Save'));
+    expect(onSave).toHaveBeenCalledOnce();
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.classes).toEqual(['artificer']);
+    const c = make({ ruleset, classes: [{ id: 'artificer', level: 1 }] });
+    const derived = d(c);
+    expect(availableSpells(derived.casters[0], derived, [saved], c)).toEqual([saved]);
+  });
+
+  it.each(['dnd5e-2014', 'dnd5e-2024'] as const)('casts Chemical Mastery separately from a prepared spell in %s', (ruleset) => {
+    const subclass = ruleset === 'dnd5e-2024' ? 'alchemist-legacy-2024' : 'alchemist';
+    const c = make({ ruleset, classes: [{ id: 'artificer', level: 19, sub: subclass }] });
+    c.spells.entries.push({ id: 'prepared-restoration', spellId: 'greater-restoration', classId: 'artificer', source: 'class', prepared: true });
+    const render = () => root.render(createElement(RulesetProvider, { value: ruleset }, createElement(SpellsTab, {
+      ch: c, d: d(c), set: (recipe) => { recipe(c); render(); }, replace: vi.fn(),
+    })));
+    const innateRow = () => [...container.querySelectorAll('tr')].find((row) => row.textContent?.includes('Greater Restoration') && row.textContent.includes('Innate'));
+    act(render);
+    click([...innateRow()?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Cast'));
+    const spend = document.querySelector<HTMLSelectElement>('[role="dialog"] select')!;
+    expect(spend.value).toBe('use');
+    click([...document.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent === 'Cast'));
+    const resourceId = `spell-use:${subclass}:greater-restoration`;
+    expect(c.resources[resourceId]?.used).toBe(1);
+    expect(c.spells.slotsUsed.some((used) => used > 0)).toBe(false);
+    click([...innateRow()?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Cast'));
+    const exhaustedCast = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === 'Cast')!;
+    expect(exhaustedCast.disabled).toBe(true);
+    click(exhaustedCast);
+    expect(c.resources[resourceId]?.used).toBe(1);
+    const exhaustedSpend = document.querySelector<HTMLSelectElement>('[role="dialog"] select')!;
+    act(() => {
+      exhaustedSpend.value = 's5';
+      exhaustedSpend.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(exhaustedCast.disabled).toBe(false);
+    click(exhaustedCast);
+    expect(c.resources[resourceId]?.used).toBe(1);
+    expect(c.spells.slotsUsed[5]).toBe(1);
+    const preparedRow = [...container.querySelectorAll('tr')].find((row) => row.textContent?.includes('Greater Restoration') && row.textContent.includes('Prepared'));
+    click([...preparedRow?.querySelectorAll('button') ?? []].find((button) => button.textContent === 'Cast'));
+    const preparedSpend = document.querySelector<HTMLSelectElement>('[role="dialog"] select')!;
+    expect(preparedSpend.value).toBe('s5');
+    expect([...preparedSpend.options].some((option) => option.value === 'use')).toBe(false);
+  });
+
+  it('allows item charges independently of spell slots and blocks an exhausted item', () => {
+    const wand = { ...db.items.get('mi-wand-of-magic-missiles')!, spells: [{ spellId: 'magic-missile', chargeCost: 1 }] };
+    const c = addItem(make({ classes: [{ id: 'wizard', level: 1 }] }), wand);
+    c.inventory[0].equipped = true;
+    c.inventory[0].charges = 1;
+    const render = () => root.render(createElement(SpellsTab, {
+      ch: c, d: d(c), set: (recipe) => { recipe(c); render(); }, replace: vi.fn(),
+    }));
+    const castItem = () => click([...container.querySelectorAll('tr button')].find((button) => button.textContent === 'Cast'));
+    const confirmButton = () => [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find((button) => button.textContent === 'Cast')!;
+    act(render);
+    castItem();
+    expect(document.querySelector<HTMLSelectElement>('[role="dialog"] select')?.value).toBe('charges');
+    expect(confirmButton().disabled).toBe(false);
+    click(confirmButton());
+    expect(c.inventory[0].charges).toBe(0);
+    expect(c.spells.slotsUsed.some((used) => used > 0)).toBe(false);
+    castItem();
+    expect(confirmButton().disabled).toBe(true);
+    click(confirmButton());
+    expect(c.inventory[0].charges).toBe(0);
   });
 });

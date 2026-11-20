@@ -97,7 +97,12 @@ export function FeatureListEditor({ features, onChange, withLevel }: { features:
 }
 
 export function SpellEditor({ initial, onClose, onSave }: { initial: SpellDef; onClose: () => void; onSave: (s: SpellDef) => void }) {
+  const db = useDb();
   const [s, setS] = useState(initial);
+  const classLists = [...new Set([...db.classes.values()].flatMap((cls) => [
+    ...(cls.spellcasting ? [cls.spellcasting.list] : []),
+    ...(db.isCustom('class', cls.id) ? [cls.id] : []),
+  ]))].sort();
   const up = (p: Partial<SpellDef>) => setS({ ...s, ...p });
   const dmg = s.damage?.bySlot?.[String(s.level)] ?? s.damage?.byCharLevel?.['1'] ?? '';
   return (
@@ -122,7 +127,7 @@ export function SpellEditor({ initial, onClose, onSave }: { initial: SpellDef; o
         <Field label="Damage type"><select value={s.damageTypes?.[0] ?? ''} onChange={(e) => up({ damageTypes: e.target.value ? [e.target.value as never] : undefined })}><option value="">None</option>{DAMAGE_TYPES.map((d) => <option key={d} value={d}>{titleCase(d)}</option>)}</select></Field>
         <Field label={s.level === 0 ? 'Damage (at level 1)' : `Damage at level ${s.level}`}><input value={dmg} placeholder="e.g. 3d6" onChange={(e) => up({ damage: e.target.value ? (s.level === 0 ? { byCharLevel: { '1': e.target.value } } : { bySlot: { [String(s.level)]: e.target.value } }) : undefined })} /></Field>
       </div>
-      <div><span className="section-label">Class spell lists</span><div className="row">{['bard', 'cleric', 'druid', 'paladin', 'ranger', 'sorcerer', 'warlock', 'wizard', ...[...dbFor(useRuleset()).classes.keys()].filter((k) => dbFor(useRuleset()).isCustom('class', k))].map((c) => <label key={c} className="check small"><input type="checkbox" checked={s.classes.includes(c)} onChange={(e) => up({ classes: e.target.checked ? [...s.classes, c] : s.classes.filter((x) => x !== c) })} />{titleCase(c)}</label>)}</div></div>
+      <div><span className="section-label">Class spell lists</span><div className="row">{classLists.map((c) => <label key={c} className="check small"><input type="checkbox" checked={s.classes.includes(c)} onChange={(e) => up({ classes: e.target.checked ? [...s.classes, c] : s.classes.filter((x) => x !== c) })} />{titleCase(c)}</label>)}</div></div>
       <Field label="Description"><textarea rows={6} value={s.description} onChange={(e) => up({ description: e.target.value })} /></Field>
       <Field label="At higher levels"><textarea rows={2} value={s.higherLevels ?? ''} onChange={(e) => up({ higherLevels: e.target.value || undefined })} /></Field>
       <Field label="Source"><input value={s.source.book} onChange={(e) => up({ source: { ...s.source, book: e.target.value } })} /></Field>
